@@ -1,0 +1,13 @@
+[package]
+name = "login-server"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+openssl = { workspace = true }
