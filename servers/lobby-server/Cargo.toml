@@ -1,0 +1,14 @@
+[package]
+name = "lobby-server"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+openssl = { workspace = true }
+foundation = { workspace = true }

@@ -1,6 +1,9 @@
 [workspace]
 members = [
-  "login-server"
+  "crates/foundation",
+  "servers/browser-server",
+  "servers/lobby-server",
+  "servers/login-server",
 ]
 exclude = []
 resolver = "3"
@@ -10,6 +13,12 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
+actix-web = "4.10.2"
+env_logger = "0.10"
+log = "0.4"
 openssl = "0.10"
+serde = { version = "1.0.219", features = ["derive"] }
+
+foundation = { path = "crates/foundation" }
 
 [workspace.lints.clippy]

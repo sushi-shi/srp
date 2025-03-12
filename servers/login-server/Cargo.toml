@@ -11,3 +11,5 @@ default = []
 
 [dependencies]
 openssl = { workspace = true }
+
+foundation = { workspace = true }
