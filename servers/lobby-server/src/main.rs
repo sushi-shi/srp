@@ -184,7 +184,7 @@ fn handle_lobby_client_reader(mut stream: TcpStream) -> ! {
                     println!("Received unknown message type: {msg_type}");
                     println!("{:?}", msgs_buffer);
                 }
-                Err(DeserializeError::NotEnoughInput) => unreachable!(),
+                Err(error) => unreachable!("{error:?}"),
             }
         }
     }
