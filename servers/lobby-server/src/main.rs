@@ -1,23 +1,17 @@
-#![allow(dead_code)] // Ssl, certificats and session ids will be used later on
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-
 mod messaging_server;
 mod state;
 
 use state::{DeserializeError, LobbyClientMessage};
 
-use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod};
+// use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use foundation::lobby_server;
 
-const PKEY_PATH: &str = "./certs/survarium_lobby_server.key";
-const CERT_PATH: &str = "./certs/survarium_lobby_server.crt";
+// const PKEY_PATH: &str = "./certs/survarium_lobby_server.key";
+// const CERT_PATH: &str = "./certs/survarium_lobby_server.crt";
 
-/// Hardcoded user session id
-const SESSION_ID: u32 = 0x3031;
 const LOCAL_NAME: &str = "sheep";
 const ANSWER_NAME: &str = "hello";
 
@@ -197,6 +191,7 @@ fn handle_lobby_client_reader(mut stream: TcpStream) -> ! {
 }
 
 // [37, 197, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 1, 0, 0,
+#[allow(unused_variables)]
 fn handle_messaging_client(mut stream: TcpStream) -> ! {
     // Expects:
     // <msg_len> <server_sign_in_info> <local_name>
@@ -247,31 +242,4 @@ fn handle_messaging_client(mut stream: TcpStream) -> ! {
         // println!("Wrote **messaging_server_sign_in_info**");
         // println!("bytes_written = {bytes_written}");
     }
-}
-
-// Received message of type: 5
-// bytes_read = 5
-// [38, 49, 48, 0, 0]
-// Received message of type: 6
-// bytes_read = 6
-// [195, 49, 48, 0, 0, 5]
-fn handle_five(mut stream: TcpStream) {
-    let mut buffer = [0; 256];
-    let bytes_read = stream.read(&mut buffer).unwrap();
-    println!("bytes_read = {bytes_read}");
-    // [38, 196, 9, 0, 0, ..]
-    //      session_id
-    println!("{:?}", buffer);
-
-    stream
-        .write(&[lobby_server_message_types_enum::connection_successful as u8])
-        .unwrap();
-    stream.write(&[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]).unwrap();
-    stream.write(&buffer).unwrap();
-
-    // ???
-    let bytes_read = stream.read(&mut buffer).unwrap();
-    println!("bytes_read = {bytes_read}");
-    println!("{:?}", buffer);
-    std::thread::sleep(std::time::Duration::from_secs(2));
 }
