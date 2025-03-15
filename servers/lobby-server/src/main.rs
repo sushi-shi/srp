@@ -1,7 +1,11 @@
 #![allow(dead_code)] // Ssl, certificats and session ids will be used later on
 #![allow(unused_imports)]
+#![allow(unused_variables)]
 
 mod messaging_server;
+mod state;
+
+use state::{DeserializeError, LobbyClientMessage};
 
 use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod};
 use std::io::{Read, Write};
@@ -73,6 +77,39 @@ enum messaging_client_message_types_enum {
     messaging_client_invalid_message_type = 0xC7,
 }
 
+#[repr(u8)]
+#[rustfmt::skip]
+#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+enum messaging_client_type_enum {
+    unknown_client_type                = 0x0,
+    login_server_client_type           = 0x1,
+    lobby_server_client_type           = 0x2,
+    match_server_client_type           = 0x3,
+    message_server_client_type         = 0x4,
+    account_client_type                = 0x5,
+    administrative_client_type         = 0x6,
+    match_maker_server_client_type     = 0x7,
+    stats_processor_server_client_type = 0x8,
+}
+
+#[repr(u8)]
+#[rustfmt::skip]
+#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+enum messaging_message_channel_enum {
+    server_message_channel = 0x0,
+    player_general_channel = 0x1,
+    player_system_channel  = 0x2,
+    player_clan_channel    = 0x3,
+    player_private_channel = 0x4,
+    player_match_channel   = 0x5,
+    player_team1_channel   = 0x6,
+    player_team2_channel   = 0x7,
+    player_squad_channel   = 0x8,
+    max_channel_num        = 0x9,
+}
+
 fn main() -> std::io::Result<()> {
     let addr = format!("{}:{}", lobby_server::ADDRESS, lobby_server::PORT);
     let listener = TcpListener::bind(&addr)?;
@@ -89,123 +126,126 @@ fn main() -> std::io::Result<()> {
 }
 
 fn handle_client(mut stream: TcpStream) {
-    let mut msg_len = [0_u8];
-    stream.read(&mut msg_len).unwrap();
-    let msg_len = msg_len[0] - 1;
+    let mut buffer = [0_u8; 1024];
+    let bytes_read = stream.read(&mut buffer).unwrap();
 
-    let mut request_type = [0_u8];
-    stream.read(&mut request_type).unwrap();
-    let request_type = request_type[0];
-    println!("Received message of type: {request_type}");
+    let buffer = &mut buffer[0..bytes_read].as_ref();
+    match LobbyClientMessage::deserialize(buffer) {
+        Ok(LobbyClientMessage::SignInInfo { session_id }) => {
+            assert!(buffer.is_empty());
 
-    match request_type <= lobby_client_message_types_enum::lobby_client_invalid_message_type as u8 {
-        true => handle_lobby_client(stream, request_type, msg_len),
-        false => handle_messaging_client(stream, request_type, msg_len),
+            println!("Received **lobby_client_sign_in_info: {session_id}**");
+            handle_lobby_client_write(stream.try_clone().unwrap());
+            handle_lobby_client_read(stream);
+        }
+        Ok(msg) => {
+            panic!("Received incorrect message. Expected 'SignInInfo': {msg:?}")
+        }
+        Err(DeserializeError::UnknownMessageType(_)) => {
+            let msg_len = buffer[0];
+            let msg_type = buffer[1];
+
+            assert_eq!(msg_len, 6);
+
+            if msg_type != messaging_client_message_types_enum::messaging_client_sign_in_info as u8
+            {
+                panic!("{:?}", buffer);
+            }
+
+            let buffer = &buffer[2..];
+            let _session_id = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
+            let _unknown_byte = buffer[4];
+            // println!("session_id = {session_id}");
+            // println!("unknown_byte = {unknown_byte}");
+            handle_messaging_client(stream)
+        }
+        Err(error) => panic!("{error:?}"),
     }
 }
 
-fn handle_lobby_client(mut stream: TcpStream, request_type: u8, msg_len: u8) {
-    match () {
-        _ if request_type == lobby_client_message_types_enum::lobby_client_sign_in_info as u8 => {
-            assert_eq!(msg_len, 4);
-            let mut buffer = [0_u8; 4];
-            stream.read_exact(&mut buffer).unwrap();
-            let session_id = u32::from_le_bytes(buffer);
-            println!("session_id = {session_id}");
+fn handle_lobby_client_write(mut stream: TcpStream) {
+    stream
+        .write(&[
+            1_u8, // len
+            lobby_server_message_types_enum::connection_successful as u8,
+        ])
+        .unwrap();
+}
 
-            stream
-                .write(&[lobby_server_message_types_enum::connection_successful as u8])
-                .unwrap();
+fn handle_lobby_client_read(mut stream: TcpStream) -> ! {
+    let mut buffer = [0_u8; 1024];
 
-            //
-            //
-            //
+    loop {
+        let bytes_read = stream.read(&mut buffer[0..]).unwrap();
 
-            let mut buffer = [0; 256];
-            let bytes_read = stream.read(&mut buffer).unwrap();
-            println!("bytes_read = {bytes_read}");
-            println!("{buffer:?}");
+        let msgs_buffer = &mut buffer[0..bytes_read].as_ref();
 
-            // let mut builder = SslContext::builder(SslMethod::tls()).unwrap();
-            // builder.set_security_level(0);
-            // builder
-            //     .set_private_key_file(PKEY_PATH, SslFiletype::PEM)
-            //     .unwrap();
-            // builder.set_certificate_chain_file(CERT_PATH).unwrap();
-            // let context = builder.build();
-            // let ssl = Ssl::new(&context).unwrap();
-
-            // let mut ssl_stream = ssl.accept(stream).unwrap();
-            // let mut buffer = [0; 256];
-            // let bytes_read = ssl_stream.read(&mut buffer).unwrap();
-            // println!("bytes_read = {bytes_read}");
-            // println!("{buffer:?}");
+        while !msgs_buffer.is_empty() {
+            let client_message = LobbyClientMessage::deserialize(msgs_buffer);
+            match client_message {
+                Ok(LobbyClientMessage::PingServer { current_time: _ }) => (),
+                Ok(client_message) => println!("Received a message: {client_message:?}"),
+                Err(DeserializeError::UnknownMessageType(_)) | Err(DeserializeError::Todo) => {
+                    let msg_type = buffer[1];
+                    println!("Received unknown message type: {msg_type}");
+                    println!("{:?}", msgs_buffer);
+                }
+                Err(DeserializeError::NotEnoughInput) => unreachable!(),
+            }
         }
-        _ => unreachable!("Unknown lobby request type: {request_type}"),
     }
 }
 
 // [37, 197, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 1, 0, 0,
-fn handle_messaging_client(mut stream: TcpStream, request_type: u8, msg_len: u8) -> ! {
-    match () {
-        _ if request_type
-            == messaging_client_message_types_enum::messaging_client_sign_in_info as u8 =>
-        {
-            assert_eq!(msg_len, 5);
-            let mut buffer = [0_u8; 5];
-            stream.read_exact(&mut buffer).unwrap();
-            let session_id = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
-            println!("session_id = {session_id}");
+fn handle_messaging_client(mut stream: TcpStream) -> ! {
+    // Expects:
+    // <msg_len> <server_sign_in_info> <local_name>
+    // msg_len: local_name.len() | ???
+    let mut buffer = vec![];
+    buffer.push(LOCAL_NAME.len() as u8 + 2);
+    buffer.push(messaging_server_message_types_enum::messaging_server_sign_in_info as u8);
+    buffer.push(LOCAL_NAME.len() as u8);
+    buffer.extend(LOCAL_NAME.as_bytes());
 
-            let unknown_byte = buffer[4];
-            println!("unknown_byte = {unknown_byte}");
+    let bytes_written = stream.write(&buffer).unwrap();
+    // println!("Wrote **messaging_server_sign_in_info**");
+    // println!("bytes_written = {bytes_written}");
 
-            //
-            //
-            //
+    //
+    //
+    //
 
-            // Expects:
-            // <msg_len> <server_sign_in_info> <local_name>
-            // msg_len: local_name.len() | ???
-            let mut buffer = vec![];
-            buffer.push(LOCAL_NAME.len() as u8 + 2);
-            buffer.push(messaging_server_message_types_enum::messaging_server_sign_in_info as u8);
-            buffer.push(LOCAL_NAME.len() as u8);
-            buffer.extend(LOCAL_NAME.as_bytes());
+    loop {
+        let mut buffer = [0; 256];
+        let bytes_read = stream.read(&mut buffer).unwrap();
+        // println!("bytes_read = {bytes_read}");
+        // println!("{buffer:?}");
 
-            let bytes_written = stream.write(&buffer).unwrap();
-            println!("Wrote **messaging_server_sign_in_info**");
-            println!("bytes_written = {bytes_written}");
+        let mut buffer = vec![];
 
-            //
-            //
-            //
+        let msg = "Hello, friend!";
+        let len = 1 + 1 + 4 + 1 + ANSWER_NAME.len() + 1 + 1 + msg.len();
 
-            loop {
-                let mut buffer = [0; 256];
-                let bytes_read = stream.read(&mut buffer).unwrap();
-                println!("bytes_read = {bytes_read}");
-                println!("{buffer:?}");
+        buffer.push(len as u8);
+        buffer.push(messaging_server_message_types_enum::messaging_server_message as u8);
+        // client type - 1 byte
+        buffer.push(messaging_client_type_enum::lobby_server_client_type as u8);
+        // client id - 4 bytes
+        buffer.extend(1_u32.to_le_bytes());
+        // name len - 1 byte
+        buffer.push(ANSWER_NAME.len() as u8);
+        // name - name.len() bytes
+        buffer.extend(ANSWER_NAME.as_bytes());
+        // message channel - 1 byte
+        buffer.push(messaging_message_channel_enum::server_message_channel as u8);
+        // message len - 1 byte
+        buffer.push(msg.len() as u8);
+        // message - message.len() bytes
+        buffer.extend(msg.as_bytes());
 
-                let mut buffer = vec![];
-
-                let msg = "Hello, friend!";
-                let len = msg.len() + ANSWER_NAME.len() + 4 + 2 + 1;
-
-                buffer.push(len as u8);
-                buffer.push(messaging_server_message_types_enum::messaging_server_message as u8);
-                buffer.extend(1_u32.to_le_bytes());
-                buffer.push(ANSWER_NAME.len() as u8);
-                buffer.extend(ANSWER_NAME.as_bytes());
-                buffer.push(msg.len() as u8);
-                buffer.extend(msg.as_bytes());
-
-                let bytes_written = stream.write(&buffer).unwrap();
-                println!("Wrote **messaging_server_sign_in_info**");
-                println!("bytes_written = {bytes_written}");
-            }
-        }
-        _ => unreachable!("Unknown messaging request type: {request_type}"),
+        let bytes_written = stream.write(&buffer).unwrap();
+        // println!("Wrote **messaging_server_sign_in_info**");
+        // println!("bytes_written = {bytes_written}");
     }
 }
 
