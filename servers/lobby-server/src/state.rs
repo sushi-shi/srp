@@ -143,7 +143,9 @@ impl LobbyClientMessage {
                 };
 
                 if !matches!(query_info_type, QueryInfoTypes::q_price_items) {
-                    if buffer_len != 4 && buffer[1] != 0 && buffer[2] != 0 && buffer[3] != 0 {
+                    if buffer_len != 4
+                        || !(buffer_len == 4 && buffer[1] == 0 && buffer[2] == 0 && buffer[3] == 0)
+                    {
                         return Err(DeserializeError::IncorrectInput);
                     }
                 }

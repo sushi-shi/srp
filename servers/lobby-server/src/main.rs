@@ -24,11 +24,11 @@ enum lobby_server_message_types_enum {
     connection_successful             = 0x30, // 1
     invalid_session_id                = 0x31,
     invalid_password                  = 0x32,
-    connect_to_match_server           = 0x33, // ??
-    operation_permitted               = 0x34, // ??
-    operation_denied                  = 0x35, // ??
-    client_status                     = 0x36, // ??
-    ping_server_answer                = 0x37,
+    connect_to_match_server           = 0x33, // '3' ?? 
+    operation_permitted               = 0x34, // '4' ??
+    operation_denied                  = 0x35, // '5' ??
+    client_status                     = 0x36, // '6' ??
+    ping_server_answer                = 0x37, // '7' ??
     lobby_server_invalid_message_type = 0x3F,
 }
 
@@ -181,12 +181,12 @@ fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<()>) -> 
         // buffer.push(lobby_server_message_types_enum::client_status as u8);
         // buffer.extend([b'A'; 49]);
 
-        buffer.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);
-        buffer.push(lobby_server_message_types_enum::connect_to_match_server as u8);
-        buffer.push(lobby_server::ADDRESS.len() as u8);
-        buffer.extend(lobby_server::ADDRESS.as_bytes());
-        buffer.extend(1_u32.to_le_bytes()); // match_id
-        buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
+        // buffer.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);
+        // buffer.push(lobby_server_message_types_enum::connect_to_match_server as u8);
+        // buffer.push(lobby_server::ADDRESS.len() as u8);
+        // buffer.extend(lobby_server::ADDRESS.as_bytes());
+        // buffer.extend(1_u32.to_le_bytes()); // match_id
+        // buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
 
         stream.write_all(&buffer).unwrap();
         println!("[writer] Wrote **client_status**");
