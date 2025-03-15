@@ -6,10 +6,10 @@ use num_traits::FromPrimitive;
 #[repr(u8)]
 enum lobby_client_message_types_enum {
     set_status_ready_for_match        = 0x20,
-    query_client_status               = 0x21, // 3
+    query_client_status               = 0x21, // 3 | 33
     inventory_action                  = 0x23,
     shop_action                       = 0x24,
-    skills_tree_action                = 0x25,
+    skills_tree_action                = 0x25, //   | 37
     lobby_client_sign_in_info         = 0x26, // 1
     discard_playing_order             = 0x27,
     ping_server                       = 0x28, // 2
@@ -67,17 +67,17 @@ pub enum FactionId {
 #[allow(non_camel_case_types)]
 #[repr(u8)]
 pub enum QueryInfoTypes {
-    q_client_state               = 0x0,
+    q_client_state               = 0x0, //
     q_enumerate_profiles         = 0x1,
     q_profile_contents           = 0x2,
     q_enumerate_inventory        = 0x3,
-    q_profile_slots_restrictions = 0x4,
-    q_items_compatibility        = 0x5,
-    q_price_items                = 0x6,
+    q_profile_slots_restrictions = 0x4, // ? (check debugger)
+    q_items_compatibility        = 0x5, // ?
+    q_price_items                = 0x6, // +
     q_account_money              = 0x7,
     q_player_skills              = 0x8,
-    q_player_skills_tree         = 0x9,
-    q_service_prices             = 0xA,
+    q_player_skills_tree         = 0x9, // ?
+    q_service_prices             = 0xA, // +
     q_player_reputations         = 0xB,
 }
 
@@ -230,3 +230,11 @@ fn parses_multiple_query_client_msg() {
         LobbyClientMessage::QueryClientStatus(QueryClientStatus::ClientState)
     );
 }
+
+// 00000000 struct __declspec(align(2)) survarium::price_item // sizeof=0x6
+// 00000000 {
+// 00000000     unsigned __int16 item_dict_id;
+// 00000002     unsigned __int16 cost;
+// 00000004     unsigned __int8 reputation_level;
+// 00000005     // padding byte
+// 00000006 };

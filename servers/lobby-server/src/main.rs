@@ -24,7 +24,7 @@ enum lobby_server_message_types_enum {
     connection_successful             = 0x30, // 1
     invalid_session_id                = 0x31,
     invalid_password                  = 0x32,
-    connect_to_match_server           = 0x33, // '3' ?? 
+    connect_to_match_server           = 0x33, // '3' ??
     operation_permitted               = 0x34, // '4' ??
     operation_denied                  = 0x35, // '5' ??
     client_status                     = 0x36, // '6' ??
@@ -181,12 +181,73 @@ fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<()>) -> 
         // buffer.push(lobby_server_message_types_enum::client_status as u8);
         // buffer.extend([b'A'; 49]);
 
+        // CONNECT TO MATCH SERVER
         // buffer.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);
         // buffer.push(lobby_server_message_types_enum::connect_to_match_server as u8);
         // buffer.push(lobby_server::ADDRESS.len() as u8);
         // buffer.extend(lobby_server::ADDRESS.as_bytes());
         // buffer.extend(1_u32.to_le_bytes()); // match_id
         // buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
+
+        // ACCOUNT MONEY
+        buffer.push(1 + 1 + 4 + 4 + 1 + 1 + ANSWER_NAME.len() as u8);
+        buffer.push(lobby_server_message_types_enum::client_status as u8);
+        buffer.push(state::QueryInfoTypes::q_account_money as u8);
+        buffer.extend(100_u32.to_le_bytes()); // generic_money
+        buffer.extend(10000_u32.to_le_bytes()); // premium_money
+        buffer.push(70); // skill_points
+        buffer.push(ANSWER_NAME.len() as u8);
+        buffer.extend(ANSWER_NAME.as_bytes());
+
+        stream.write_all(&buffer).unwrap();
+        println!("[writer] Wrote **client_status**");
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // SERVICE_PRICES
+        buffer.push(1 + 1 + 4 + 4 + 4);
+        buffer.push(lobby_server_message_types_enum::client_status as u8);
+        buffer.push(state::QueryInfoTypes::q_service_prices as u8);
+        buffer.extend(1_u32.to_le_bytes()); // reroll_cost
+        buffer.extend(2_u32.to_le_bytes()); // add_profile_cost
+        buffer.extend(3_u32.to_le_bytes()); // rename_account_cost
+
+        stream.write_all(&buffer).unwrap();
+        println!("[writer] Wrote **client_status**");
+
+        // PRICE ITEMS
+        buffer.push(1 + 1 + 1 + 2 + (2 + 2 + 1 + 1) * 5);
+        buffer.push(lobby_server_message_types_enum::client_status as u8);
+        buffer.push(state::QueryInfoTypes::q_price_items as u8);
+        buffer.push(FactionId::Loners as u8); // faction_id
+        buffer.extend(5_u16.to_le_bytes()); // item_len
+        #[rustfmt::skip]
+        {
+            buffer.extend(29_u16.to_le_bytes());  // 1: item_dict_id
+            buffer.extend(100_u16.to_le_bytes()); // 1: cost
+            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+            buffer.extend(31_u16.to_le_bytes());  // 1: item_dict_id
+            buffer.extend(100_u16.to_le_bytes()); // 1: cost
+            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+            buffer.extend(30_u16.to_le_bytes());  // 1: item_dict_id
+            buffer.extend(100_u16.to_le_bytes()); // 1: cost
+            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+            buffer.extend(34_u16.to_le_bytes());  // 1: item_dict_id
+            buffer.extend(100_u16.to_le_bytes()); // 1: cost
+            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+            buffer.extend(65_u16.to_le_bytes());  // 1: item_dict_id
+            buffer.extend(100_u16.to_le_bytes()); // 1: cost
+            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+        };
 
         stream.write_all(&buffer).unwrap();
         println!("[writer] Wrote **client_status**");
