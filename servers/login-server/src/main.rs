@@ -158,7 +158,7 @@ fn handle_sign_out(mut stream: TcpStream) {
     let bytes_read = stream.read(&mut buffer).unwrap();
 
     println!("bytes_read = {bytes_read}");
-    println!("{:?}", buffer);
+    println!("{buffer:?}");
 
     let buffer: [u8; 4] = buffer[0..4].try_into().unwrap();
     let session_id = u32::from_le_bytes(buffer);
