@@ -49,10 +49,10 @@ pub enum QueryClientStatus {
 #[derive(num_derive::FromPrimitive, Debug, PartialEq)]
 #[repr(u8)]
 pub enum FactionId {
-    Bandits = 0x1,
-    Forest  = 0x2,
+    Loners  = 0x1,
+    Bandits = 0x2,
     Army    = 0x3,
-    Loners  = 0x4,
+    Forest  = 0x4,
 }
 
 #[rustfmt::skip]
@@ -136,7 +136,7 @@ impl LobbyClientMessage {
                 };
 
                 if !matches!(query_info_type, QueryInfoTypes::q_price_items) {
-                    if buffer_len != 4 {
+                    if buffer_len != 4 && buffer {
                         return Err(DeserializeError::IncorrectInput);
                     }
                 }
