@@ -135,8 +135,8 @@ fn handle_client(mut stream: TcpStream) {
             assert!(buffer.is_empty());
 
             println!("Received **lobby_client_sign_in_info: {session_id}**");
-            handle_lobby_client_write(stream.try_clone().unwrap());
-            handle_lobby_client_read(stream);
+            handle_lobby_client_writer(stream.try_clone().unwrap());
+            handle_lobby_client_reader(stream);
         }
         Ok(msg) => {
             panic!("Received incorrect message. Expected 'SignInInfo': {msg:?}")
@@ -163,16 +163,16 @@ fn handle_client(mut stream: TcpStream) {
     }
 }
 
-fn handle_lobby_client_write(mut stream: TcpStream) {
+fn handle_lobby_client_writer(mut stream: TcpStream) {
     stream
         .write(&[
-            1_u8, // len
+            1_u8, // tcp_msg_len (for response)
             lobby_server_message_types_enum::connection_successful as u8,
         ])
         .unwrap();
 }
 
-fn handle_lobby_client_read(mut stream: TcpStream) -> ! {
+fn handle_lobby_client_reader(mut stream: TcpStream) -> ! {
     let mut buffer = [0_u8; 1024];
 
     loop {
