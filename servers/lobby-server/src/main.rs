@@ -1,11 +1,12 @@
 mod messaging_server;
 mod state;
 
-use state::{DeserializeError, LobbyClientMessage};
+use state::{DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus};
 
 // use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::mpsc;
 
 use foundation::lobby_server;
 
@@ -129,8 +130,15 @@ fn handle_client(mut stream: TcpStream) {
             assert!(buffer.is_empty());
 
             println!("Received **lobby_client_sign_in_info: {session_id}**");
-            handle_lobby_client_writer(stream.try_clone().unwrap());
-            handle_lobby_client_reader(stream);
+            let (tx, rx) = mpsc::channel::<()>();
+
+            std::thread::spawn({
+                let stream = stream.try_clone().unwrap();
+                move || {
+                    handle_lobby_client_writer(stream, rx);
+                }
+            });
+            handle_lobby_client_reader(stream, tx);
         }
         Ok(msg) => {
             panic!("Received incorrect message. Expected 'SignInInfo': {msg:?}")
@@ -157,16 +165,35 @@ fn handle_client(mut stream: TcpStream) {
     }
 }
 
-fn handle_lobby_client_writer(mut stream: TcpStream) {
+fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<()>) -> ! {
     stream
         .write(&[
             1_u8, // tcp_msg_len (for response)
             lobby_server_message_types_enum::connection_successful as u8,
         ])
         .unwrap();
+
+    loop {
+        let _msg = rx.recv().unwrap();
+
+        let mut buffer = vec![];
+        // buffer.push(50); // len
+        // buffer.push(lobby_server_message_types_enum::client_status as u8);
+        // buffer.extend([b'A'; 49]);
+
+        buffer.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);
+        buffer.push(lobby_server_message_types_enum::connect_to_match_server as u8);
+        buffer.push(lobby_server::ADDRESS.len() as u8);
+        buffer.extend(lobby_server::ADDRESS.as_bytes());
+        buffer.extend(1_u32.to_le_bytes()); // match_id
+        buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
+
+        stream.write_all(&buffer).unwrap();
+        println!("[writer] Wrote **client_status**");
+    }
 }
 
-fn handle_lobby_client_reader(mut stream: TcpStream) -> ! {
+fn handle_lobby_client_reader(mut stream: TcpStream, tx: mpsc::Sender<()>) -> ! {
     let mut buffer = [0_u8; 1024];
 
     loop {
@@ -178,7 +205,17 @@ fn handle_lobby_client_reader(mut stream: TcpStream) -> ! {
             let client_message = LobbyClientMessage::deserialize(msgs_buffer);
             match client_message {
                 Ok(LobbyClientMessage::PingServer { current_time: _ }) => (),
-                Ok(client_message) => println!("Received a message: {client_message:?}"),
+                Ok(client_message) => {
+                    println!("Received a message: {client_message:?}");
+                    match client_message {
+                        // Send random message at first
+                        LobbyClientMessage::QueryClientStatus(QueryClientStatus::PriceItems(
+                            FactionId::Loners,
+                        )) => tx.send(()).unwrap(),
+
+                        _ => (),
+                    }
+                }
                 Err(error) => {
                     println!("{error:?}");
                     println!("{msgs_buffer:?}");

@@ -54,6 +54,13 @@ pub enum FactionId {
     Army    = 0x3,
     Forest  = 0x4,
 }
+// Was used in `on_lobby_packed_received`
+// pub enum FactionId {
+//     Loners  = 0b0001,
+//     Bandits = 0b0010,
+//     Army    = 0b0100,
+//     Forest  = 0b1000,
+// }
 
 #[rustfmt::skip]
 #[derive(num_derive::FromPrimitive, Debug, PartialEq)]
@@ -136,7 +143,7 @@ impl LobbyClientMessage {
                 };
 
                 if !matches!(query_info_type, QueryInfoTypes::q_price_items) {
-                    if buffer_len != 4 && buffer {
+                    if buffer_len != 4 && buffer[1] != 0 && buffer[2] != 0 && buffer[3] != 0 {
                         return Err(DeserializeError::IncorrectInput);
                     }
                 }
@@ -213,7 +220,7 @@ fn parses_multiple_query_client_msg() {
 
     assert_eq!(
         msgs[4],
-        LobbyClientMessage::QueryClientStatus(QueryClientStatus::PriceItems(FactionId::Forest)),
+        LobbyClientMessage::QueryClientStatus(QueryClientStatus::PriceItems(FactionId::Bandits)),
     );
 
     assert_eq!(
