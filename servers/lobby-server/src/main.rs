@@ -179,12 +179,10 @@ fn handle_lobby_client_reader(mut stream: TcpStream) -> ! {
             match client_message {
                 Ok(LobbyClientMessage::PingServer { current_time: _ }) => (),
                 Ok(client_message) => println!("Received a message: {client_message:?}"),
-                Err(DeserializeError::UnknownMessageType(_)) | Err(DeserializeError::Todo) => {
-                    let msg_type = buffer[1];
-                    println!("Received unknown message type: {msg_type}");
-                    println!("{:?}", msgs_buffer);
+                Err(error) => {
+                    println!("{error:?}");
+                    println!("{msgs_buffer:?}");
                 }
-                Err(error) => unreachable!("{error:?}"),
             }
         }
     }
