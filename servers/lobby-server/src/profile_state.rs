@@ -48,8 +48,14 @@ impl player_profile {
         slots[0] = inventory_item_instance {
             condition_or_stack: 1,
             amount_in_inventory: 1,
-            id: 30,
-            dict_id: 30,
+            id: 55,
+            dict_id: 55,
+        };
+        slots[1] = inventory_item_instance {
+            condition_or_stack: 0,
+            amount_in_inventory: 5,
+            id: 35,
+            dict_id: 35,
         };
         Self {
             account_id: 1,
