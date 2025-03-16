@@ -1,4 +1,5 @@
 mod messaging_server;
+mod profile_state;
 mod state;
 
 use state::{DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus};
@@ -130,7 +131,7 @@ fn handle_client(mut stream: TcpStream) {
             assert!(buffer.is_empty());
 
             println!("Received **lobby_client_sign_in_info: {session_id}**");
-            let (tx, rx) = mpsc::channel::<()>();
+            let (tx, rx) = mpsc::channel::<bool>();
 
             std::thread::spawn({
                 let stream = stream.try_clone().unwrap();
@@ -165,7 +166,7 @@ fn handle_client(mut stream: TcpStream) {
     }
 }
 
-fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<()>) -> ! {
+fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<bool>) -> ! {
     stream
         .write(&[
             1_u8, // tcp_msg_len (for response)
@@ -174,87 +175,141 @@ fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<()>) -> 
         .unwrap();
 
     loop {
-        let _msg = rx.recv().unwrap();
+        let msg = rx.recv().unwrap();
+        match msg {
+            true => {
+                // buffer.push(50); // len
+                // buffer.push(lobby_server_message_types_enum::client_status as u8);
+                // buffer.extend([b'A'; 49]);
 
-        let mut buffer = vec![];
-        // buffer.push(50); // len
-        // buffer.push(lobby_server_message_types_enum::client_status as u8);
-        // buffer.extend([b'A'; 49]);
+                // CONNECT TO MATCH SERVER
+                // buffer.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);
+                // buffer.push(lobby_server_message_types_enum::connect_to_match_server as u8);
+                // buffer.push(lobby_server::ADDRESS.len() as u8);
+                // buffer.extend(lobby_server::ADDRESS.as_bytes());
+                // buffer.extend(1_u32.to_le_bytes()); // match_id
+                // buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
 
-        // CONNECT TO MATCH SERVER
-        // buffer.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);
-        // buffer.push(lobby_server_message_types_enum::connect_to_match_server as u8);
-        // buffer.push(lobby_server::ADDRESS.len() as u8);
-        // buffer.extend(lobby_server::ADDRESS.as_bytes());
-        // buffer.extend(1_u32.to_le_bytes()); // match_id
-        // buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
+                // ACCOUNT MONEY
+                let mut buffer = vec![];
+                buffer.push(1 + 1 + 4 + 4 + 1 + 1 + ANSWER_NAME.len() as u8);
+                buffer.push(lobby_server_message_types_enum::client_status as u8);
+                buffer.push(state::QueryInfoTypes::q_account_money as u8);
+                buffer.extend(100_u32.to_le_bytes()); // generic_money
+                buffer.extend(10000_u32.to_le_bytes()); // premium_money
+                buffer.push(70); // skill_points
+                buffer.push(ANSWER_NAME.len() as u8);
+                buffer.extend(ANSWER_NAME.as_bytes());
 
-        // ACCOUNT MONEY
-        buffer.push(1 + 1 + 4 + 4 + 1 + 1 + ANSWER_NAME.len() as u8);
-        buffer.push(lobby_server_message_types_enum::client_status as u8);
-        buffer.push(state::QueryInfoTypes::q_account_money as u8);
-        buffer.extend(100_u32.to_le_bytes()); // generic_money
-        buffer.extend(10000_u32.to_le_bytes()); // premium_money
-        buffer.push(70); // skill_points
-        buffer.push(ANSWER_NAME.len() as u8);
-        buffer.extend(ANSWER_NAME.as_bytes());
+                stream.write_all(&buffer).unwrap();
+                println!("[writer] Wrote **client_status**");
 
-        stream.write_all(&buffer).unwrap();
-        println!("[writer] Wrote **client_status**");
+                std::thread::sleep(std::time::Duration::from_secs(2));
 
-        std::thread::sleep(std::time::Duration::from_secs(2));
+                // SERVICE_PRICES
+                let mut buffer = vec![];
+                buffer.push(1 + 1 + 4 + 4 + 4);
+                buffer.push(lobby_server_message_types_enum::client_status as u8);
+                buffer.push(state::QueryInfoTypes::q_service_prices as u8);
+                buffer.extend(1_u32.to_le_bytes()); // reroll_cost
+                buffer.extend(2_u32.to_le_bytes()); // add_profile_cost
+                buffer.extend(3_u32.to_le_bytes()); // rename_account_cost
 
-        // SERVICE_PRICES
-        buffer.push(1 + 1 + 4 + 4 + 4);
-        buffer.push(lobby_server_message_types_enum::client_status as u8);
-        buffer.push(state::QueryInfoTypes::q_service_prices as u8);
-        buffer.extend(1_u32.to_le_bytes()); // reroll_cost
-        buffer.extend(2_u32.to_le_bytes()); // add_profile_cost
-        buffer.extend(3_u32.to_le_bytes()); // rename_account_cost
+                stream.write_all(&buffer).unwrap();
+                println!("[writer] Wrote **client_status**");
 
-        stream.write_all(&buffer).unwrap();
-        println!("[writer] Wrote **client_status**");
+                std::thread::sleep(std::time::Duration::from_secs(2));
 
-        // PRICE ITEMS
-        buffer.push(1 + 1 + 1 + 2 + (2 + 2 + 1 + 1) * 5);
-        buffer.push(lobby_server_message_types_enum::client_status as u8);
-        buffer.push(state::QueryInfoTypes::q_price_items as u8);
-        buffer.push(FactionId::Loners as u8); // faction_id
-        buffer.extend(5_u16.to_le_bytes()); // item_len
-        #[rustfmt::skip]
-        {
-            buffer.extend(29_u16.to_le_bytes());  // 1: item_dict_id
-            buffer.extend(100_u16.to_le_bytes()); // 1: cost
-            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
-            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+                // PRICE ITEMS
+                for idx_start in [44] {
+                    let mut buffer = vec![];
+                    const ITEM_LEN: u8 = 20;
+                    const MSG_LEN: u8 = 1 + 1 + 1 + 2 + (2 + 2 + 1 + 1) * ITEM_LEN;
 
-            buffer.extend(31_u16.to_le_bytes());  // 1: item_dict_id
-            buffer.extend(100_u16.to_le_bytes()); // 1: cost
-            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
-            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+                    buffer.push(MSG_LEN);
+                    buffer.push(lobby_server_message_types_enum::client_status as u8);
+                    buffer.push(state::QueryInfoTypes::q_price_items as u8);
+                    buffer.push(FactionId::Loners as u8); // faction_id
+                    buffer.extend((ITEM_LEN as u16).to_le_bytes()); // item_len
 
-            buffer.extend(30_u16.to_le_bytes());  // 1: item_dict_id
-            buffer.extend(100_u16.to_le_bytes()); // 1: cost
-            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
-            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+                    for i in idx_start..idx_start + ITEM_LEN {
+                        buffer.extend((i as u16).to_le_bytes()); // 1: item_dict_id
+                        buffer.extend((i as u16).to_le_bytes()); // 1: cost
+                        buffer.extend(0_u8.to_le_bytes()); // 1: reputation_level
+                        buffer.extend(0_u8.to_le_bytes()); // 1: padding
+                    }
 
-            buffer.extend(34_u16.to_le_bytes());  // 1: item_dict_id
-            buffer.extend(100_u16.to_le_bytes()); // 1: cost
-            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
-            buffer.extend(0_u8.to_le_bytes());    // 1: padding
+                    stream.write_all(&buffer).unwrap();
+                    println!("[writer] Wrote **alotofstuff**");
+                }
 
-            buffer.extend(65_u16.to_le_bytes());  // 1: item_dict_id
-            buffer.extend(100_u16.to_le_bytes()); // 1: cost
-            buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
-            buffer.extend(0_u8.to_le_bytes());    // 1: padding
-        };
+                // #[rustfmt::skip]
+                // {
+                //     buffer.extend(29_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(29_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
 
-        stream.write_all(&buffer).unwrap();
-        println!("[writer] Wrote **client_status**");
+                //     buffer.extend(30_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(30_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     buffer.extend(31_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(31_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     buffer.extend(32_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(32_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     buffer.extend(33_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(33_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     buffer.extend(34_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(34_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     buffer.extend(35_u16.to_le_bytes());  // 1: item_dict_id
+                //     buffer.extend(35_u16.to_le_bytes()); // 1: cost
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     // buffer.extend(34_u16.to_le_bytes());  // 1: item_dict_id
+                //     // buffer.extend(100_u16.to_le_bytes()); // 1: cost
+                //     // buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     // buffer.extend(0_u8.to_le_bytes());    // 1: padding
+
+                //     // buffer.extend(65_u16.to_le_bytes());  // 1: item_dict_id
+                //     // buffer.extend(100_u16.to_le_bytes()); // 1: cost
+                //     // buffer.extend(0_u8.to_le_bytes());    // 1: reputation_level
+                //     // buffer.extend(0_u8.to_le_bytes());    // 1: padding
+                // };
+
+                stream.write_all(&buffer).unwrap();
+                println!("[writer] Wrote **alotofstuff**");
+            }
+            false => {
+                // CLIENT STATE
+                let mut buffer = vec![];
+                buffer.push(255);
+                buffer.push(lobby_server_message_types_enum::client_status as u8);
+                buffer.push(state::QueryInfoTypes::q_client_state as u8);
+                buffer.extend(profile_state::player_profile::new().deserialize());
+
+                stream.write_all(&buffer).unwrap();
+                println!("[writer] Wrote **client_state**");
+            }
+        }
     }
 }
 
-fn handle_lobby_client_reader(mut stream: TcpStream, tx: mpsc::Sender<()>) -> ! {
+fn handle_lobby_client_reader(mut stream: TcpStream, tx: mpsc::Sender<bool>) -> ! {
     let mut buffer = [0_u8; 1024];
 
     loop {
@@ -272,7 +327,10 @@ fn handle_lobby_client_reader(mut stream: TcpStream, tx: mpsc::Sender<()>) -> ! 
                         // Send random message at first
                         LobbyClientMessage::QueryClientStatus(QueryClientStatus::PriceItems(
                             FactionId::Loners,
-                        )) => tx.send(()).unwrap(),
+                        )) => tx.send(true).unwrap(),
+                        LobbyClientMessage::QueryClientStatus(QueryClientStatus::ClientState) => {
+                            tx.send(false).unwrap()
+                        }
 
                         _ => (),
                     }
