@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/foundation",
+  "scripts/db-static-dictionaries-parser",
   "servers/browser-server",
   "servers/lobby-server",
   "servers/login-server",
@@ -20,6 +21,7 @@ num-derive = "0.4"
 num-traits = "0.2"
 openssl = "0.10"
 serde = { version = "1.0.219", features = ["derive"] }
+crc32fast = "1.4.2"
 
 foundation = { path = "crates/foundation" }
 

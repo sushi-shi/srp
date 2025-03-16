@@ -1,0 +1,10 @@
+[package]
+name = "db-static-dictionaries-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+crc32fast = { workspace = true }
+
+[lints]
+workspace = true
