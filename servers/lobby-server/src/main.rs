@@ -221,27 +221,32 @@ fn handle_lobby_client_writer(mut stream: TcpStream, rx: mpsc::Receiver<bool>) -
                 std::thread::sleep(std::time::Duration::from_secs(2));
 
                 // PRICE ITEMS
-                for idx_start in [44] {
-                    let mut buffer = vec![];
-                    const ITEM_LEN: u8 = 20;
-                    const MSG_LEN: u8 = 1 + 1 + 1 + 2 + (2 + 2 + 1 + 1) * ITEM_LEN;
+                let ids = [
+                    7, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, 27, 28, 29, 31, 32, 33,
+                    34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
+                    54, 55, 56, 57, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+                ];
+                let idx_start = 0;
+                let mut buffer = vec![];
+                const ITEM_LEN: u8 = 40;
+                const MSG_LEN: u8 = 1 + 1 + 1 + 2 + (2 + 2 + 1 + 1) * ITEM_LEN;
 
-                    buffer.push(MSG_LEN);
-                    buffer.push(lobby_server_message_types_enum::client_status as u8);
-                    buffer.push(state::QueryInfoTypes::q_price_items as u8);
-                    buffer.push(FactionId::Loners as u8); // faction_id
-                    buffer.extend((ITEM_LEN as u16).to_le_bytes()); // item_len
+                buffer.push(MSG_LEN);
+                buffer.push(lobby_server_message_types_enum::client_status as u8);
+                buffer.push(state::QueryInfoTypes::q_price_items as u8);
+                buffer.push(FactionId::Loners as u8); // faction_id
+                buffer.extend((ITEM_LEN as u16).to_le_bytes()); // item_len
 
-                    for i in idx_start..idx_start + ITEM_LEN {
-                        buffer.extend((i as u16).to_le_bytes()); // 1: item_dict_id
-                        buffer.extend((i as u16).to_le_bytes()); // 1: cost
-                        buffer.extend(0_u8.to_le_bytes()); // 1: reputation_level
-                        buffer.extend(0_u8.to_le_bytes()); // 1: padding
-                    }
-
-                    stream.write_all(&buffer).unwrap();
-                    println!("[writer] Wrote **alotofstuff**");
+                for i in idx_start..idx_start + ITEM_LEN {
+                    let i = ids[i as usize];
+                    buffer.extend((i as u16).to_le_bytes()); // 1: item_dict_id
+                    buffer.extend((i as u16).to_le_bytes()); // 1: cost
+                    buffer.extend(0_u8.to_le_bytes()); // 1: reputation_level
+                    buffer.extend(0_u8.to_le_bytes()); // 1: padding
                 }
+
+                stream.write_all(&buffer).unwrap();
+                println!("[writer] Wrote **alotofstuff**");
 
                 // #[rustfmt::skip]
                 // {
