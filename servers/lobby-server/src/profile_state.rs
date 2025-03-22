@@ -46,15 +46,15 @@ impl player_profile {
     pub fn new() -> Self {
         let mut slots = [inventory_item_instance::default(); 19];
         slots[0] = inventory_item_instance {
-            condition_or_stack: 1,
+            condition_or_stack: 0,
             amount_in_inventory: 1,
-            id: 55,
+            id: 1,
             dict_id: 55,
         };
         slots[1] = inventory_item_instance {
             condition_or_stack: 0,
-            amount_in_inventory: 5,
-            id: 35,
+            amount_in_inventory: 1,
+            id: 2,
             dict_id: 35,
         };
         Self {
@@ -63,7 +63,7 @@ impl player_profile {
             profile_name: *b"hello\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             boosters: [skill_booster::default(); 11],
             slots,
-            team: game_team_id::team_1,
+            team: game_team_id::team_neutral,
             is_local: false,
         }
     }
@@ -103,11 +103,13 @@ impl player_profile {
     //     todo!()
     // }
 }
-// impl inventory_item_instance {
-//     pub fn deserialize(self) -> Vec<u8> {
-//         todo!()
-//     }
-// }
+impl inventory_item_instance {
+    pub fn serialize(&self) -> &[u8] {
+        let ptr = self as *const _ as *const u8;
+        let len = std::mem::size_of::<Self>();
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    }
+}
 
 // impl skill_booster {
 //     pub fn deserialize(self) -> Vec<u8> {

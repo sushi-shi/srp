@@ -5,6 +5,9 @@ edition.workspace = true
 
 [dependencies]
 crc32fast = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+arrayref = "0.3.9"
 
 [lints]
 workspace = true
