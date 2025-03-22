@@ -3,7 +3,7 @@ mod network_client;
 mod profile_state;
 mod state;
 
-use state::{DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus, QueryInfoTypes};
+use state::{DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus};
 
 // use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod};
 use std::io::{Read, Write};
@@ -191,6 +191,7 @@ fn handle_lobby_client_writer(
 
     loop {
         let msg = rx.recv().unwrap();
+        println!("[writer] Received {msg:?}");
         match msg {
             QueryClientStatus::ClientState => {
                 // CLIENT STATE
@@ -243,14 +244,35 @@ fn handle_lobby_client_writer(
                 network_client::send_message(&mut stream, &buffer);
                 println!("[writer] Wrote **price_items**");
             }
+            // Currently passed for all factions in a single price items for loners
             QueryClientStatus::PriceItems(_) => {}
             QueryClientStatus::ServicePrices => {
+                #[repr(C)]
+                struct service_prices_ {
+                    reroll_cost: u32,
+                    add_profile_cost: u32,
+                    rename_account_cost: u32,
+                }
+
+                impl service_prices_ {
+                    pub fn serialize(&self) -> &[u8] {
+                        let ptr = self as *const _ as *const u8;
+                        let len = std::mem::size_of::<Self>();
+                        unsafe { std::slice::from_raw_parts(ptr, len) }
+                    }
+                }
+
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
                 buffer.push(state::QueryInfoTypes::q_service_prices as u8);
-                buffer.extend(1_u32.to_le_bytes()); // reroll_cost
-                buffer.extend(2_u32.to_le_bytes()); // add_profile_cost
-                buffer.extend(3_u32.to_le_bytes()); // rename_account_cost
+                buffer.extend(
+                    service_prices_ {
+                        reroll_cost: 100,
+                        add_profile_cost: 200,
+                        rename_account_cost: 300,
+                    }
+                    .serialize(),
+                );
 
                 network_client::send_message(&mut stream, &buffer);
                 println!("[writer] Wrote **service_prices**");
@@ -308,7 +330,30 @@ fn handle_lobby_client_writer(
                 network_client::send_message(&mut stream, &buffer);
                 println!("[writer] Wrote **player_reputations**");
             }
-            _ => (),
+            QueryClientStatus::EnumerateProfiles => {
+                let mut buffer = vec![];
+
+                buffer.push(lobby_server_message_types_enum::client_status as u8);
+                buffer.push(state::QueryInfoTypes::q_profile_contents as u8);
+
+                buffer.push(2); // profiles_counts
+
+                for (i, name) in ["server_profile_1", "server_profile_2"].iter().enumerate() {
+                    let i = (i + 1) as u32;
+                    buffer.extend((1000 * i).to_le_bytes()); // profile_id
+                    buffer.push(name.len() as u8); // profile_name_len
+                    buffer.extend(name.as_bytes()); // profile_name_bytes
+                }
+
+                network_client::send_message(&mut stream, &buffer);
+                println!("[writer] Wrote **enumerate_profiles**");
+            }
+
+            QueryClientStatus::ProfileContents => (),
+            QueryClientStatus::ProfileSlotsRestrictions => (),
+            QueryClientStatus::ItemsCompatibility => (),
+            QueryClientStatus::PlayerSkills => (),
+            QueryClientStatus::PlayerSkillsTree => (),
         }
     }
 }
