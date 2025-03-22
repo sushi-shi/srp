@@ -86,6 +86,13 @@ impl BinaryTree {
         let value = BinaryValue::parse(buffer);
         value.print_rec(self, 0, None);
     }
+
+    #[allow(dead_code)]
+    pub fn parse_n_print_str(&self) {
+        let buffer = &self.0;
+        let value = BinaryValue::parse(buffer);
+        value.print_str_rec(self);
+    }
 }
 
 impl BinaryValue {
@@ -206,6 +213,38 @@ impl BinaryValue {
                 let float_w = f32::from_le_bytes(*float_w);
                 println!("{prefix}: {float_x}|{float_y}|{float_z}|{float_w}");
             }
+        }
+    }
+
+    fn print_str_rec(&self, tree: &BinaryTree) {
+        match self.type_ {
+            BinaryType::t_table_named | BinaryType::t_table_indexed => {
+                let offset = self.data as usize;
+                let len = self.count as usize;
+
+                let buffer = &tree.0;
+                for i in 0..len {
+                    let this = Self::parse(&buffer[offset + i * Self::SIZE..]);
+                    Self::print_str_rec(&this, tree);
+                }
+            }
+
+            BinaryType::t_string => {
+                let offset = self.data as usize;
+                let len = self.count as usize;
+                let buffer = &tree.0[offset..offset + len - 1]; // '\0'
+
+                let (value, _, had_errors) = WINDOWS_1251.decode(buffer);
+                assert!(!had_errors);
+
+                println!("{value}");
+            }
+            BinaryType::t_boolean
+            | BinaryType::t_integer
+            | BinaryType::t_float
+            | BinaryType::t_float2
+            | BinaryType::t_float3
+            | BinaryType::t_float4 => {}
         }
     }
 }
