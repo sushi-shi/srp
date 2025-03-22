@@ -1,4 +1,5 @@
 use crc32fast::Hasher;
+use encoding_rs::WINDOWS_1251;
 use num_traits::FromPrimitive;
 use std::cell::LazyCell;
 use std::collections::HashMap;
@@ -66,7 +67,7 @@ impl std::fmt::Display for IdCrc {
             });
         }
 
-        let value = MAP.with(|map| map.get(&self.0).map(|x| *x));
+        let value = MAP.with(|map| map.get(&self.0).copied());
         match value {
             None => std::fmt::Debug::fmt(&self.0, f),
             Some(value) => std::fmt::Debug::fmt(value, f),
@@ -114,23 +115,28 @@ impl BinaryValue {
     }
 
     fn print_rec(&self, tree: &BinaryTree, depth: usize, index: Option<usize>) {
-        let tab = tab(depth);
-        match self.type_ {
-            BinaryType::t_table_named | BinaryType::t_table_indexed => {
+        let prefix = match index {
+            Some(index) => {
+                let tab = tab(depth);
+                let id_crc = self.id_crc.to_string();
+                assert_eq!(id_crc, "\"\"");
+
+                format!("{tab}{index}")
+            }
+            None => {
+                let tab = tab(depth);
                 let id_crc = self.id_crc;
 
+                format!("{tab}{id_crc}")
+            }
+        };
+
+        match self.type_ {
+            BinaryType::t_table_named | BinaryType::t_table_indexed => {
                 let offset = self.data as usize;
                 let len = self.count as usize;
 
-                match index {
-                    Some(index) => {
-                        let id_crc = id_crc.to_string();
-                        assert_eq!(id_crc, "\"\"");
-
-                        println!("{tab}{index}[{len}]:")
-                    }
-                    None => println!("{tab}{id_crc}[{len}]:"),
-                }
+                println!("{prefix}[{len}]");
 
                 let buffer = &tree.0;
                 for i in 0..len {
@@ -147,44 +153,38 @@ impl BinaryValue {
             }
 
             BinaryType::t_boolean => {
-                let id_crc = self.id_crc;
                 let value = self.data != 0;
-                println!("{tab}{id_crc}: {value}")
+                println!("{prefix}: {value}");
             }
             BinaryType::t_integer => {
-                let id_crc = self.id_crc;
                 let value = self.data;
-                println!("{tab}{id_crc}: {value}")
+                println!("{prefix}: {value}");
             }
             BinaryType::t_float => {
-                let id_crc = self.id_crc;
                 let value = self.data as f32;
-                println!("{tab}{id_crc}: {value}")
+                println!("{prefix}: {value}");
             }
             BinaryType::t_string => {
-                let id_crc = self.id_crc;
-
                 let offset = self.data as usize;
                 let len = self.count as usize;
                 let buffer = &tree.0[offset..offset + len - 1]; // '\0'
 
-                let value = String::from_utf8_lossy(buffer);
-                println!("{tab}{id_crc}: \"{value}\"")
+                let (value, _, had_errors) = WINDOWS_1251.decode(buffer);
+                assert!(!had_errors);
+                // let value = String::from_utf8_lossy(buffer);
+
+                println!("{prefix}: \"{value}\"");
             }
             BinaryType::t_float2 => {
-                let id_crc = self.id_crc;
-
                 let offset = self.data as usize;
                 let buffer = tree.0[offset..offset + 4 * 2].try_into().unwrap();
 
                 let (float_x, float_y) = arrayref::array_refs![&buffer, 4, 4];
                 let float_x = f32::from_le_bytes(*float_x);
                 let float_y = f32::from_le_bytes(*float_y);
-                println!("{tab}{id_crc}: {float_x}-{float_y}")
+                println!("{prefix}: {float_x}|{float_y}");
             }
             BinaryType::t_float3 => {
-                let id_crc = self.id_crc;
-
                 let offset = self.data as usize;
                 let buffer = tree.0[offset..offset + 4 * 3].try_into().unwrap();
 
@@ -192,11 +192,9 @@ impl BinaryValue {
                 let float_x = f32::from_le_bytes(*float_x);
                 let float_y = f32::from_le_bytes(*float_y);
                 let float_z = f32::from_le_bytes(*float_z);
-                println!("{tab}{id_crc}: {float_x}-{float_y}-{float_z}")
+                println!("{prefix}: {float_x}|{float_y}|{float_z}");
             }
             BinaryType::t_float4 => {
-                let id_crc = self.id_crc;
-
                 let offset = self.data as usize;
                 let buffer = tree.0[offset..offset + 4 * 4].try_into().unwrap();
 
@@ -206,7 +204,7 @@ impl BinaryValue {
                 let float_y = f32::from_le_bytes(*float_y);
                 let float_z = f32::from_le_bytes(*float_z);
                 let float_w = f32::from_le_bytes(*float_w);
-                println!("{tab}{id_crc}: {float_x}-{float_y}-{float_z}-{float_w}")
+                println!("{prefix}: {float_x}|{float_y}|{float_z}|{float_w}");
             }
         }
     }

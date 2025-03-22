@@ -2,8 +2,8 @@ mod datastruct;
 
 use datastruct::BinaryTree;
 
-// const DB_STATIC_DICTIONARIES: &[u8] = include_bytes!("../dicts/db_static_dictionaries_001b1");
-const DB_STATIC_DICTIONARIES: &[u8] = include_bytes!("../dicts/db_static_dictionaries_034a0_00");
+// const DB_STATIC_DICTIONARIES: &[u8] = include_bytes!("../dicts/player_death.particle");
+const DB_STATIC_DICTIONARIES: &[u8] = include_bytes!("../dicts/db_static_dictionaries_001b");
 
 fn main() {
     let binary_tree = BinaryTree::new(DB_STATIC_DICTIONARIES);
