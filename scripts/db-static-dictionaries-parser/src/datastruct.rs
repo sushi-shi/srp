@@ -3,6 +3,7 @@ use encoding_rs::WINDOWS_1251;
 use num_traits::FromPrimitive;
 use std::cell::LazyCell;
 use std::collections::HashMap;
+use std::ffi::CStr;
 
 /// Constraints:
 /// 1. The first `BinaryValue` should always be:
@@ -40,7 +41,7 @@ pub enum BinaryType {
     t_float4,
 }
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 #[repr(transparent)]
 pub struct IdCrc(u32);
 
@@ -63,7 +64,7 @@ impl std::fmt::Display for IdCrc {
                         }
                     }
                 )
-                .map(|s| (get_hash(s), s)).collect()
+                .map(|s| (IdCrc::get_hash(s).0, s)).collect()
             });
         }
 
@@ -72,6 +73,18 @@ impl std::fmt::Display for IdCrc {
             None => std::fmt::Debug::fmt(&self.0, f),
             Some(value) => std::fmt::Debug::fmt(value, f),
         }
+    }
+}
+
+impl IdCrc {
+    pub fn get(self) -> u32 {
+        self.0
+    }
+
+    pub fn get_hash(name: &str) -> Self {
+        let mut hasher = Hasher::new();
+        hasher.update(name.as_bytes());
+        Self(hasher.finalize())
     }
 }
 
@@ -96,7 +109,16 @@ impl BinaryTree {
 }
 
 impl BinaryValue {
-    const SIZE: usize = std::mem::size_of::<Self>();
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+
+    pub const ROOT: Self = Self {
+        data: 0x18,
+        id: 0,
+        id_crc: IdCrc(0),
+        type_: BinaryType::t_table_named,
+        count: 0,
+    };
+
     pub fn parse(buffer: &[u8]) -> Self {
         assert!(buffer.len() >= Self::SIZE);
 
@@ -125,6 +147,7 @@ impl BinaryValue {
         let prefix = match index {
             Some(index) => {
                 let tab = tab(depth);
+
                 let id_crc = self.id_crc.to_string();
                 assert_eq!(id_crc, "\"\"");
 
@@ -132,7 +155,9 @@ impl BinaryValue {
             }
             None => {
                 let tab = tab(depth);
-                let id_crc = self.id_crc;
+
+                let id = &tree.0[self.id as usize..];
+                let id_crc = CStr::from_bytes_until_nul(id).unwrap().to_str().unwrap();
 
                 format!("{tab}{id_crc}")
             }
@@ -247,12 +272,10 @@ impl BinaryValue {
             | BinaryType::t_float4 => {}
         }
     }
-}
 
-fn get_hash(name: &str) -> u32 {
-    let mut hasher = Hasher::new();
-    hasher.update(name.as_bytes());
-    hasher.finalize()
+    pub fn to_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self as *const _ as *const u8, Self::SIZE) }
+    }
 }
 
 fn tab(depth: usize) -> String {
