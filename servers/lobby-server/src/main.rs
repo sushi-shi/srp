@@ -486,7 +486,7 @@ fn handle_lobby_client_writer(
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
                 buffer.push(state::QueryInfoTypes::q_player_skills_tree as u8);
 
-                const SKILLS_TREE: &[u8] = include_bytes!("../../../skills_tree.bin");
+                const SKILLS_TREE: &[u8] = include_bytes!("../../../resources/skills_tree.bin");
                 buffer.extend(SKILLS_TREE);
 
                 network_client::send_message(&mut stream, &buffer);

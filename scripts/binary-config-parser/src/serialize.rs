@@ -1,8 +1,8 @@
+use crate::deserialize::{BinaryConfig, BinaryType, BinaryValue, IdCrc};
+
 use std::collections::{HashMap, VecDeque};
 
-use crate::datastruct::{BinaryType, BinaryValue, IdCrc};
-
-pub fn parse_json_into_binary_tree(root: &serde_json::Value) -> Vec<u8> {
+pub fn parse_json_into_binary_tree(root: &serde_json::Value) -> BinaryConfig {
     use serde_json::Value;
 
     let len = count_elements(root);
@@ -34,7 +34,7 @@ pub fn parse_json_into_binary_tree(root: &serde_json::Value) -> Vec<u8> {
             }
             Value::Number(data) => {
                 if let Some(data) = data.as_i64() {
-                    let data: u32 = data.try_into().unwrap();
+                    let data: i32 = data.try_into().unwrap();
                     BinaryValue {
                         data: data as u64,
                         id,
@@ -43,7 +43,8 @@ pub fn parse_json_into_binary_tree(root: &serde_json::Value) -> Vec<u8> {
                         count: 0x4,
                     }
                 } else if let Some(data) = data.as_f64() {
-                    let data: f32 = data as f32;
+                    let data: u32 = (data as f32).to_bits();
+
                     BinaryValue {
                         data: data as u64,
                         id,
@@ -76,9 +77,9 @@ pub fn parse_json_into_binary_tree(root: &serde_json::Value) -> Vec<u8> {
             }
             Value::Array(values) => {
                 let mut parent_idx = Some(idx);
-                queue.extend(values.iter().map(|v| {
+                queue.extend(values.iter().enumerate().map(|(id, v)| {
                     let parent_idx = parent_idx.take();
-                    (v, parent_idx, 0, IdCrc::default())
+                    (v, parent_idx, id as u64, IdCrc::default())
                 }));
 
                 let data = 0;
@@ -132,7 +133,7 @@ pub fn parse_json_into_binary_tree(root: &serde_json::Value) -> Vec<u8> {
         idx += 1;
     }
 
-    buffer
+    BinaryConfig::new(&buffer)
 }
 
 pub fn count_elements(input: &serde_json::Value) -> usize {
@@ -144,12 +145,12 @@ pub fn count_elements(input: &serde_json::Value) -> usize {
     inner_items + 1
 }
 
-pub fn write_value(buffer: &mut Vec<u8>, idx: usize, value: BinaryValue) {
+pub fn write_value(buffer: &mut [u8], idx: usize, value: BinaryValue) {
     buffer[idx * BinaryValue::SIZE..(idx + 1) * BinaryValue::SIZE]
-        .copy_from_slice(value.to_bytes());
+        .copy_from_slice(value.as_bytes());
 }
 
-pub fn fix_parent(buffer: &mut Vec<u8>, parent_idx: usize, idx: usize) {
+pub fn fix_parent(buffer: &mut [u8], parent_idx: usize, idx: usize) {
     let value = (idx * BinaryValue::SIZE) as u64;
 
     buffer[parent_idx * BinaryValue::SIZE..parent_idx * BinaryValue::SIZE + 8]

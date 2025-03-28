@@ -1,8 +1,6 @@
 use crc32fast::Hasher;
 use encoding_rs::WINDOWS_1251;
 use num_traits::FromPrimitive;
-use std::cell::LazyCell;
-use std::collections::HashMap;
 use std::ffi::CStr;
 
 /// Constraints:
@@ -11,7 +9,7 @@ use std::ffi::CStr;
 /// { data: 0x18, id: 0, id_crc: "", type_: t_table_named, count: 5 }
 /// ```
 /// 2. The data structure should be consistent with all offsets pointing inside it
-pub struct BinaryTree(Vec<u8>);
+pub struct BinaryConfig(Vec<u8>);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -45,37 +43,6 @@ pub enum BinaryType {
 #[repr(transparent)]
 pub struct IdCrc(u32);
 
-impl std::fmt::Display for IdCrc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        thread_local! {
-            static MAP: LazyCell<HashMap<u32, &'static str>> = LazyCell::new(|| {
-                const IDS: &str = include_str!("./../survarium_identifiers.txt");
-
-                IDS.split('\n').flat_map(|s|
-                    match s.contains("%d") {
-                        false => vec![s],
-                        true => {
-                            (0..100).map(|i| {
-                                let s = s.replace("%d", &i.to_string());
-                                let s: &'static str = Box::leak(s.into_boxed_str());
-                                s
-                            })
-                            .collect()
-                        }
-                    }
-                )
-                .map(|s| (IdCrc::get_hash(s).0, s)).collect()
-            });
-        }
-
-        let value = MAP.with(|map| map.get(&self.0).copied());
-        match value {
-            None => std::fmt::Debug::fmt(&self.0, f),
-            Some(value) => std::fmt::Debug::fmt(value, f),
-        }
-    }
-}
-
 impl IdCrc {
     pub fn get(self) -> u32 {
         self.0
@@ -88,10 +55,14 @@ impl IdCrc {
     }
 }
 
-impl BinaryTree {
+impl BinaryConfig {
     pub fn new(binary: &[u8]) -> Self {
         assert!(binary.len() >= 0x18);
         Self(binary.to_vec())
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_ref()
     }
 
     pub fn parse_n_print(&self) {
@@ -110,14 +81,6 @@ impl BinaryTree {
 
 impl BinaryValue {
     pub const SIZE: usize = std::mem::size_of::<Self>();
-
-    pub const ROOT: Self = Self {
-        data: 0x18,
-        id: 0,
-        id_crc: IdCrc(0),
-        type_: BinaryType::t_table_named,
-        count: 0,
-    };
 
     pub fn parse(buffer: &[u8]) -> Self {
         assert!(buffer.len() >= Self::SIZE);
@@ -143,13 +106,10 @@ impl BinaryValue {
         }
     }
 
-    fn print_rec(&self, tree: &BinaryTree, depth: usize, index: Option<usize>) {
+    fn print_rec(&self, tree: &BinaryConfig, depth: usize, index: Option<usize>) {
         let prefix = match index {
             Some(index) => {
                 let tab = tab(depth);
-
-                let id_crc = self.id_crc.to_string();
-                assert_eq!(id_crc, "\"\"");
 
                 format!("{tab}{index}")
             }
@@ -189,11 +149,11 @@ impl BinaryValue {
                 println!("{prefix}: {value}");
             }
             BinaryType::t_integer => {
-                let value = self.data;
+                let value = self.data as i32;
                 println!("{prefix}: {value}");
             }
             BinaryType::t_float => {
-                let value = self.data as f32;
+                let value = f32::from_bits(self.data as u32);
                 println!("{prefix}: {value}");
             }
             BinaryType::t_string => {
@@ -241,7 +201,7 @@ impl BinaryValue {
         }
     }
 
-    fn print_str_rec(&self, tree: &BinaryTree) {
+    fn print_str_rec(&self, tree: &BinaryConfig) {
         match self.type_ {
             BinaryType::t_table_named | BinaryType::t_table_indexed => {
                 let offset = self.data as usize;
@@ -273,7 +233,7 @@ impl BinaryValue {
         }
     }
 
-    pub fn to_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self as *const _ as *const u8, Self::SIZE) }
     }
 }
