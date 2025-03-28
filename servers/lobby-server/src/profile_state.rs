@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -73,35 +73,6 @@ impl player_profile {
         let len = std::mem::size_of::<Self>();
         unsafe { std::slice::from_raw_parts(ptr, len) }
     }
-
-    // pub fn deserialize(self) -> Vec<u8> {
-    //     let Self {
-    //         account_id,
-    //         profile_id,
-    //         profile_name,
-    //         boosters,
-    //         slots,
-    //         team,
-    //         is_local,
-    //     } = self;
-
-    //     let mut buffer = vec![];
-
-    //     buffer.extend(account_id.to_le_bytes());
-    //     buffer.extend(profile_id.to_le_bytes());
-    //     buffer.extend(profile_name);
-    //     for booster in boosters {
-    //         buffer.extend(booster.deserialize());
-    //     }
-    //     for slot in slots {
-    //         buffer.extend(slot.deserialize());
-    //     }
-    //     buffer.extend((team as u32).to_le_bytes());
-    //     buffer.push(is_local as u8);
-    //     buffer.extend([]);
-
-    //     todo!()
-    // }
 }
 impl inventory_item_instance {
     pub fn serialize(&self) -> &[u8] {
@@ -110,9 +81,3 @@ impl inventory_item_instance {
         unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
-
-// impl skill_booster {
-//     pub fn deserialize(self) -> Vec<u8> {
-//         todo!()
-//     }
-// }
