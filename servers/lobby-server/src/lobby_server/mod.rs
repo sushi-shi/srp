@@ -1,5 +1,10 @@
-use crate::state::{DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus};
-use crate::{network_client, profile_state, state, ANSWER_NAME};
+mod client_message;
+mod player_profile;
+
+use crate::{network_client, ANSWER_NAME};
+use client_message::{
+    query_info_types_enum, DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus,
+};
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -7,8 +12,8 @@ use std::sync::mpsc;
 
 #[repr(u8)]
 #[rustfmt::skip]
-#[allow(non_camel_case_types)]
-#[allow(dead_code)]
+#[expect(non_camel_case_types)]
+#[expect(dead_code)]
 enum lobby_server_message_types_enum {
     connection_successful             = 0x30, // 1
     invalid_session_id                = 0x31,
@@ -23,8 +28,8 @@ enum lobby_server_message_types_enum {
 
 #[repr(u8)]
 #[rustfmt::skip]
-#[allow(non_camel_case_types)]
-#[allow(dead_code)]
+#[expect(non_camel_case_types)]
+#[expect(dead_code)]
 enum lobby_client_message_types_enum {
     set_status_ready_for_match        = 0x20,
     query_client_status               = 0x21,
@@ -44,7 +49,7 @@ pub fn handle(stream: TcpStream, buffer: &[u8], bytes_read: usize) {
             assert!(buffer.is_empty());
 
             println!("Received **lobby_client_sign_in_info: {session_id}**");
-            let (tx, rx) = mpsc::channel::<state::QueryClientStatus>();
+            let (tx, rx) = mpsc::channel::<QueryClientStatus>();
 
             std::thread::spawn({
                 let stream = stream.try_clone().unwrap();
@@ -73,7 +78,7 @@ pub fn handle(stream: TcpStream, buffer: &[u8], bytes_read: usize) {
 // buffer.extend(lobby_server::ADDRESS.as_bytes());
 // buffer.extend(1_u32.to_le_bytes()); // match_id
 // buffer.extend(0_u32.to_le_bytes()); // team_id : survarium::game_team_id
-fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus>) -> ! {
+fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<QueryClientStatus>) -> ! {
     stream
         .write(&[
             1_u8, // tcp_msg_len (for response)
@@ -89,7 +94,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 // CLIENT STATE
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_client_state as u8);
+                buffer.push(query_info_types_enum::q_client_state as u8);
                 buffer.push(0); // m_status
                 buffer.push("last_status_message".len() as u8);
                 buffer.extend(b"last_status_message");
@@ -100,9 +105,9 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
             QueryClientStatus::AccountMoney => {
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_account_money as u8);
-                buffer.extend(100_u32.to_le_bytes()); // generic_money
-                buffer.extend(10000_u32.to_le_bytes()); // premium_money
+                buffer.push(query_info_types_enum::q_account_money as u8);
+                buffer.extend(1_000_000_u32.to_le_bytes()); // generic_money
+                buffer.extend(100_000_u32.to_le_bytes()); // premium_money
                 buffer.push(70); // skill_points
                 buffer.push(ANSWER_NAME.len() as u8);
                 buffer.extend(ANSWER_NAME.as_bytes());
@@ -130,7 +135,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 let item_len = dict_ids.len() as u8;
 
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_price_items as u8);
+                buffer.push(query_info_types_enum::q_price_items as u8);
                 buffer.push(faction as u8); // faction_id
                 buffer.extend((item_len as u16).to_le_bytes()); // item_len
 
@@ -163,7 +168,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
 
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_service_prices as u8);
+                buffer.push(query_info_types_enum::q_service_prices as u8);
                 buffer.extend(
                     service_prices_ {
                         reroll_cost: 100,
@@ -176,15 +181,17 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 network_client::send_message(&mut stream, &buffer);
                 println!("[writer] Wrote **service_prices**");
             }
+
+            // @TODO
             QueryClientStatus::EnumerateInventory => {
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_enumerate_inventory as u8);
+                buffer.push(query_info_types_enum::q_enumerate_inventory as u8);
 
-                buffer.extend(1_u32.to_le_bytes()); // num of inventory items
+                buffer.extend(2_u32.to_le_bytes()); // num of inventory items
 
                 buffer.extend(
-                    profile_state::inventory_item_instance {
+                    player_profile::inventory_item_instance {
                         condition_or_stack: 0,
                         amount_in_inventory: 1,
                         id: 1, // ???
@@ -192,10 +199,20 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                     }
                     .serialize(),
                 );
+                buffer.extend(
+                    player_profile::inventory_item_instance {
+                        condition_or_stack: 1,
+                        amount_in_inventory: 10,
+                        id: 2, // ???
+                        dict_id: 57,
+                    }
+                    .serialize(),
+                );
 
                 network_client::send_message(&mut stream, &buffer);
                 println!("[writer] Wrote **enumerate_inventory**");
             }
+
             QueryClientStatus::PlayerReputations => {
                 #[repr(C)]
                 struct survarium_player_reputation {
@@ -213,7 +230,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
 
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_player_reputations as u8);
+                buffer.push(query_info_types_enum::q_player_reputations as u8);
 
                 buffer.push(4_u8); // num of reputations
                 for (faction_id, reputation_points) in [(1, 100), (2, 200), (3, 300), (4, 400)] {
@@ -229,11 +246,13 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 network_client::send_message(&mut stream, &buffer);
                 println!("[writer] Wrote **player_reputations**");
             }
+
+            // @TODO
             QueryClientStatus::EnumerateProfiles => {
                 let mut buffer = vec![];
 
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_profile_contents as u8);
+                buffer.push(query_info_types_enum::q_enumerate_profiles as u8);
 
                 buffer.push(1); // profiles_counts
 
@@ -253,6 +272,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 println!("[writer] Wrote **enumerate_profiles**");
             }
 
+            // @TODO
             // @NOTE: Possibly to connect ammo and weapons?
             // Yes!
             QueryClientStatus::ItemsCompatibility => {
@@ -272,7 +292,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
 
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_items_compatibility as u8);
+                buffer.push(query_info_types_enum::q_items_compatibility as u8);
 
                 buffer.extend(1_u32.to_le_bytes()); // num of compatibilities
                 for (first_item_dict_id, second_item_dict_id) in [(7, 9)] {
@@ -289,7 +309,8 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 println!("[writer] Wrote **items_compatibility**");
             }
 
-            // @NOTE: In which slot what type of weapon can be placed?
+            // @TODO
+            // @NOTE: In which slot what type of weapon can be placed.
             QueryClientStatus::ProfileSlotsRestrictions => {
                 #[repr(C)]
                 struct profile_slot_restriction {
@@ -307,7 +328,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
 
                 let mut buffer = vec![];
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_profile_slots_restrictions as u8);
+                buffer.push(query_info_types_enum::q_profile_slots_restrictions as u8);
 
                 buffer.extend(1_u32.to_le_bytes()); // num of compatibilities
                 for (slot_dict_id, category_dict_id) in [(1, 2)] {
@@ -328,7 +349,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 let mut buffer = vec![];
 
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_player_skills as u8);
+                buffer.push(query_info_types_enum::q_player_skills as u8);
 
                 buffer.extend(1800_u32.to_le_bytes()); // total_experience
                 buffer.extend(3750_u32.to_le_bytes()); // next_level_experience
@@ -376,9 +397,9 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
                 let mut buffer = vec![];
 
                 buffer.push(lobby_server_message_types_enum::client_status as u8);
-                buffer.push(state::QueryInfoTypes::q_player_skills_tree as u8);
+                buffer.push(query_info_types_enum::q_player_skills_tree as u8);
 
-                const SKILLS_TREE: &[u8] = include_bytes!("../../../resources/skills_tree.bin");
+                const SKILLS_TREE: &[u8] = include_bytes!("../../../../resources/skills_tree.bin");
                 buffer.extend(SKILLS_TREE);
 
                 network_client::send_message(&mut stream, &buffer);
@@ -545,12 +566,14 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<state::QueryClientStatus
             //   profile_slot_id: 22
 
             //
-            QueryClientStatus::ProfileContents => (),
+            QueryClientStatus::ProfileContents { profile_id } => {
+                dbg!(profile_id);
+            }
         }
     }
 }
 
-fn run_reader(mut stream: TcpStream, tx: mpsc::Sender<state::QueryClientStatus>) -> ! {
+fn run_reader(mut stream: TcpStream, tx: mpsc::Sender<QueryClientStatus>) -> ! {
     let mut buffer = [0_u8; 1024];
 
     loop {

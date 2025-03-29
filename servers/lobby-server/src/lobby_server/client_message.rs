@@ -2,7 +2,7 @@ use num_traits::FromPrimitive;
 
 #[rustfmt::skip]
 #[derive(num_derive::FromPrimitive)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[repr(u8)]
 enum lobby_client_message_types_enum {
     set_status_ready_for_match        = 0x20,
@@ -32,7 +32,7 @@ pub enum LobbyClientMessage {
 pub enum QueryClientStatus {
     ClientState,
     EnumerateProfiles,
-    ProfileContents,
+    ProfileContents { profile_id: u32 },
     EnumerateInventory,
     ProfileSlotsRestrictions,
     ItemsCompatibility,
@@ -44,7 +44,6 @@ pub enum QueryClientStatus {
     PlayerReputations,
 }
 
-// @TODO: Maybe IDs are incorrect. Order is from the wiki
 #[rustfmt::skip]
 #[derive(num_derive::FromPrimitive, Debug, PartialEq)]
 #[repr(u8)]
@@ -64,9 +63,9 @@ pub enum FactionId {
 
 #[rustfmt::skip]
 #[derive(num_derive::FromPrimitive, Debug, PartialEq)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[repr(u8)]
-pub enum QueryInfoTypes {
+pub enum query_info_types_enum {
     q_client_state               = 0x0, //
     q_enumerate_profiles         = 0x1,
     q_profile_contents           = 0x2,
@@ -89,6 +88,7 @@ pub enum DeserializeError {
     IncorrectInput,
 }
 
+// [6, 33, 2, 232, 3, 0, 0]
 impl LobbyClientMessage {
     pub fn deserialize(out_buffer: &mut &[u8]) -> Result<Self, DeserializeError> {
         if out_buffer.is_empty() {
@@ -106,64 +106,121 @@ impl LobbyClientMessage {
             return Err(DeserializeError::UnknownMessageType(msg_type));
         };
 
-        let buffer = &out_buffer[2..];
-        let buffer_len = tcp_msg_len - 1;
+        // [len | msg_type | ... ]
+        // 0    1          2     1 + len
+        //      |------ len -----|
+        let buffer = &out_buffer[2..tcp_msg_len + 1];
+
         let result = match msg_type {
             lobby_client_message_types_enum::set_status_ready_for_match => {
                 Err(DeserializeError::Todo)
             }
+
+            // [len | msg_type | query_type | ... ]
+            // 0    1          2            3     1 + len
             lobby_client_message_types_enum::query_client_status => {
                 let query_info_type = buffer[0];
-                let query_info_type = QueryInfoTypes::from_u8(query_info_type)
+                let query_info_type = query_info_types_enum::from_u8(query_info_type)
                     .ok_or(DeserializeError::IncorrectInput)?;
 
+                let buffer = &buffer[1..];
+
                 let query_client_status = match query_info_type {
-                    QueryInfoTypes::q_client_state => QueryClientStatus::ClientState,
-                    QueryInfoTypes::q_enumerate_profiles => QueryClientStatus::EnumerateProfiles,
-                    QueryInfoTypes::q_profile_contents => QueryClientStatus::ProfileContents,
-                    QueryInfoTypes::q_enumerate_inventory => QueryClientStatus::EnumerateInventory,
-                    QueryInfoTypes::q_profile_slots_restrictions => {
-                        QueryClientStatus::ProfileSlotsRestrictions
-                    }
-                    QueryInfoTypes::q_items_compatibility => QueryClientStatus::ItemsCompatibility,
-                    QueryInfoTypes::q_price_items => {
-                        if buffer_len != 2 {
+                    query_info_types_enum::q_client_state => {
+                        if buffer != &[0, 0, 0] {
                             return Err(DeserializeError::IncorrectInput);
                         }
-                        let faction_id = buffer[1];
+                        QueryClientStatus::ClientState
+                    }
+                    query_info_types_enum::q_enumerate_profiles => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::EnumerateProfiles
+                    }
+                    query_info_types_enum::q_profile_contents => {
+                        if buffer.len() != 4 {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        let profile_id = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
+                        QueryClientStatus::ProfileContents { profile_id }
+                    }
+                    query_info_types_enum::q_enumerate_inventory => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::EnumerateInventory
+                    }
+                    query_info_types_enum::q_profile_slots_restrictions => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::ProfileSlotsRestrictions
+                    }
+                    query_info_types_enum::q_items_compatibility => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::ItemsCompatibility
+                    }
+                    query_info_types_enum::q_price_items => {
+                        if buffer.len() != 1 {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        let faction_id = buffer[0];
                         let faction_id = FactionId::from_u8(faction_id)
                             .ok_or(DeserializeError::IncorrectInput)?;
                         QueryClientStatus::PriceItems(faction_id)
                     }
-                    QueryInfoTypes::q_account_money => QueryClientStatus::AccountMoney,
-                    QueryInfoTypes::q_player_skills => QueryClientStatus::PlayerSkills,
-                    QueryInfoTypes::q_player_skills_tree => QueryClientStatus::PlayerSkillsTree,
-                    QueryInfoTypes::q_service_prices => QueryClientStatus::ServicePrices,
-                    QueryInfoTypes::q_player_reputations => QueryClientStatus::PlayerReputations,
-                };
-
-                if !matches!(query_info_type, QueryInfoTypes::q_price_items) {
-                    if buffer_len != 4
-                        || !(buffer_len == 4 && buffer[1] == 0 && buffer[2] == 0 && buffer[3] == 0)
-                    {
-                        return Err(DeserializeError::IncorrectInput);
+                    query_info_types_enum::q_account_money => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::AccountMoney
                     }
-                }
+                    query_info_types_enum::q_player_skills => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::PlayerSkills
+                    }
+                    query_info_types_enum::q_player_skills_tree => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::PlayerSkillsTree
+                    }
+                    query_info_types_enum::q_service_prices => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::ServicePrices
+                    }
+                    query_info_types_enum::q_player_reputations => {
+                        if buffer != &[0, 0, 0] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        QueryClientStatus::PlayerReputations
+                    }
+                };
 
                 Ok(Self::QueryClientStatus(query_client_status))
             }
             lobby_client_message_types_enum::inventory_action => Err(DeserializeError::Todo),
+
             lobby_client_message_types_enum::shop_action => Err(DeserializeError::Todo),
             lobby_client_message_types_enum::skills_tree_action => Err(DeserializeError::Todo),
-            lobby_client_message_types_enum::lobby_client_sign_in_info => match buffer_len {
-                4 => {
-                    let session_id = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
-                    Ok(Self::SignInInfo { session_id })
+            lobby_client_message_types_enum::lobby_client_sign_in_info => {
+                match dbg!(buffer.len()) {
+                    4 => {
+                        let session_id = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
+                        Ok(Self::SignInInfo { session_id })
+                    }
+                    _ => Err(DeserializeError::NotEnoughInput),
                 }
-                _ => Err(DeserializeError::NotEnoughInput),
-            },
+            }
             lobby_client_message_types_enum::discard_playing_order => Err(DeserializeError::Todo),
-            lobby_client_message_types_enum::ping_server => match buffer_len {
+            lobby_client_message_types_enum::ping_server => match buffer.len() {
                 4 => {
                     let current_time = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
                     Ok(Self::PingServer { current_time })

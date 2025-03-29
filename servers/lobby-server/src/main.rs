@@ -1,9 +1,6 @@
 mod lobby_server;
 mod messaging_server;
-
 mod network_client;
-mod profile_state;
-mod state;
 
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};

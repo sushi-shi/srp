@@ -13,7 +13,7 @@ pub struct player_profile {
 }
 const _: () = assert!(std::mem::size_of::<player_profile>() == 0x1B8);
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[repr(u32)]
 #[derive(Clone, Copy)]
 pub enum game_team_id {
