@@ -99,8 +99,9 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<LobbyClientMessage>) -> 
             LobbyClientMessage::PingServer { alive_seconds: _ } => (),
 
             LobbyClientMessage::ReadyForMatch { profile_id: _ } => (),
+            LobbyClientMessage::SkillsTreeAction(_) => (),
 
-            LobbyClientMessage::InventoryAction => {
+            LobbyClientMessage::InventoryAction(_) => {
                 let mut packet = Packet::new();
                 packet.push(lobby_server_message_types_enum::operation_permitted as u8);
                 packet.push(lobby_client_message_types_enum::inventory_action as u8);
@@ -112,7 +113,7 @@ fn run_writer(mut stream: TcpStream, rx: mpsc::Receiver<LobbyClientMessage>) -> 
             LobbyClientMessage::ShopAction(ShopAction::Buy {
                 dict_id,
                 amount,
-                _idk,
+                _unknown_1,
                 faction_id: _,
             }) => {
                 let condition_or_stack = amount as u32;

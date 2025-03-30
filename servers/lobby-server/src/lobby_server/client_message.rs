@@ -1,5 +1,7 @@
 use num_traits::FromPrimitive;
 
+use crate::lobby_server::player_profile::profile_slot_enum;
+
 #[rustfmt::skip]
 #[derive(num_derive::FromPrimitive)]
 #[expect(non_camel_case_types)]
@@ -65,8 +67,9 @@ pub enum skills_tree_events_enum {
 pub enum LobbyClientMessage {
     ReadyForMatch { profile_id: u32 },
     QueryClientStatus(QueryClientStatus),
-    InventoryAction,
+    InventoryAction(InventoryAction),
     ShopAction(ShopAction),
+    SkillsTreeAction(SkillsTreeAction),
 
     // 5 bytes
     // login_client_message_types_enum::lobby_client_sign_in_info
@@ -94,8 +97,33 @@ pub enum QueryClientStatus {
 
 #[derive(Debug, PartialEq)]
 pub enum InventoryAction {
-    Empty,
-    Equip,
+    Equip {
+        profile_id: u32,
+        id: u32,
+        dict_id: u16,
+        kind: EquipKind,
+        amount: u16,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SkillsTreeAction {
+    Apply { skills: [u8; 5], perks: Vec<u8> },
+    Reroll,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum EquipKind {
+    Equip {
+        to_slot: profile_slot_enum,
+    },
+    Unequip {
+        from_slot: profile_slot_enum,
+    },
+    Move {
+        from_slot: profile_slot_enum,
+        to_slot: profile_slot_enum,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -103,7 +131,7 @@ pub enum ShopAction {
     Buy {
         dict_id: u16,
         amount: u16,
-        _idk: u16,
+        _unknown_1: u16,
         faction_id: FactionId,
     },
 }
@@ -256,41 +284,106 @@ impl LobbyClientMessage {
                 Ok(Self::QueryClientStatus(query_client_status))
             }
 
-            // FFFFFFFF enum lobby::inventory_events_enum : __int32
-            // FFFFFFFF {
-            // FFFFFFFF     item_moved_to_slot = 0x0,
-            // FFFFFFFF };
-
-            // uzi equip 10 (or 7)
-            // [25, 35, 0, 1, 64, 13, 3, 0, 16, 39, 0, 0, 55, 0, 0, 0, 100, 0, 0, 0, 7, 0, 0, 0, 1, 0]
-            // [25, 35, 0, 1, 64, 13, 3, 0, 10, 0, 0, 0, 55, 0, 0, 0, 100, 0, 0, 0, 7, 0, 0, 0, 1, 0]
+            // @NOTE: Currently this does only simple checks, but the result would need
+            // to be verified even more.
+            // So we should either move everything here, or move everything out.
+            // Decide which approach will be better. E.g.:
+            //  - Moving into an incorrect slot
+            //  - Moving non-existing item
+            //  - Moving from non-existing profile
+            //  - Moving a thing not set in a proper slot
+            //  - ... way more
             //
-            // [25, 35, 0, 1, 64, 13, 3, 0, 16, 39, 0, 0, 55, 0, 0, 0, 100, 0, 0, 0, 10, 0, 0, 0, 1, 0]
-            //
-            // unequip
-            // [25, 35, 0, 1, 128, 26, 6, 0, 7, 0, 0, 0, 55, 0, 0, 0, 7, 0, 0, 0, 100, 0, 0, 0, 1, 0]
+            // Currently this does only type verification, but in the future we would want to wrap
+            // `profile_id`, `id` and `dict_id` to their own types as well, so maybe no need to
+            // check for kind here?
             lobby_client_message_types_enum::inventory_action => {
-                if buffer != &[0, 0] {
-                    return Err(DeserializeError::IncorrectInput);
+                let action_type = buffer.get(0).ok_or(DeserializeError::IncorrectInput)?;
+                let action_type = inventory_events_enum::from_u8(*action_type)
+                    .ok_or(DeserializeError::IncorrectInput)?;
+
+                let buffer = &buffer[1..];
+
+                match action_type {
+                    inventory_events_enum::item_moved_to_slot => {
+                        let Ok(buffer) = buffer.try_into() else {
+                            return Err(DeserializeError::IncorrectInput);
+                        };
+                        let buffer: &[u8; 23] = buffer;
+                        let (
+                            _unknown_1, // always equals 1
+                            profile_id,
+                            id,
+                            dict_id,
+                            from_slot,
+                            to_slot,
+                            amount,
+                        ) = arrayref::array_refs![buffer, 1, 4, 4, 4, 4, 4, 2];
+
+                        if _unknown_1 != &[1] {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+
+                        let profile_id = u32::from_le_bytes(*profile_id);
+                        let id = u32::from_le_bytes(*id);
+                        let dict_id = u32::from_le_bytes(*dict_id);
+                        let from_slot = u32::from_le_bytes(*from_slot);
+                        let to_slot = u32::from_le_bytes(*to_slot);
+                        let amount = u16::from_le_bytes(*amount);
+
+                        let dict_id: u16 = dict_id
+                            .try_into()
+                            .map_err(|_| DeserializeError::IncorrectInput)?;
+                        let kind = match (from_slot, to_slot) {
+                            (100, to_slot) => {
+                                let to_slot = profile_slot_enum::from_u32(to_slot)
+                                    .ok_or(DeserializeError::IncorrectInput)?;
+                                EquipKind::Equip { to_slot }
+                            }
+                            (from_slot, 100) => {
+                                let from_slot = profile_slot_enum::from_u32(from_slot)
+                                    .ok_or(DeserializeError::IncorrectInput)?;
+                                EquipKind::Unequip { from_slot }
+                            }
+                            (from_slot, to_slot) => {
+                                let to_slot = profile_slot_enum::from_u32(to_slot)
+                                    .ok_or(DeserializeError::IncorrectInput)?;
+                                let from_slot = profile_slot_enum::from_u32(from_slot)
+                                    .ok_or(DeserializeError::IncorrectInput)?;
+                                EquipKind::Move { from_slot, to_slot }
+                            }
+                        };
+
+                        Ok(Self::InventoryAction(InventoryAction::Equip {
+                            profile_id,
+                            id,
+                            dict_id,
+                            kind,
+                            amount,
+                        }))
+                    }
                 }
-                Ok(Self::InventoryAction)
             }
 
             lobby_client_message_types_enum::shop_action => {
-                let Ok(buffer) = buffer.try_into() else {
-                    return Err(DeserializeError::IncorrectInput);
-                };
-                let buffer: &[u8; 9] = buffer;
-                let (action_type, dict_id, amount, _idk, faction_id) =
-                    arrayref::array_refs![buffer, 1, 2, 2, 2, 2];
-
-                let action_type = shop_events_enum::from_u8(action_type[0])
+                let action_type = buffer.get(0).ok_or(DeserializeError::IncorrectInput)?;
+                let action_type = shop_events_enum::from_u8(*action_type)
                     .ok_or(DeserializeError::IncorrectInput)?;
+
+                let buffer = &buffer[1..];
+
                 match action_type {
                     shop_events_enum::item_bought => {
+                        let Ok(buffer) = buffer.try_into() else {
+                            return Err(DeserializeError::IncorrectInput);
+                        };
+                        let buffer: &[u8; 8] = buffer;
+                        let (dict_id, amount, _idk, faction_id) =
+                            arrayref::array_refs![buffer, 2, 2, 2, 2];
+
                         let dict_id = u16::from_le_bytes(*dict_id);
                         let amount = u16::from_le_bytes(*amount);
-                        let _idk = u16::from_le_bytes(*_idk);
+                        let _unknown_1 = u16::from_le_bytes(*_idk);
                         let faction_id = u16::from_le_bytes(*faction_id);
 
                         let faction_id = FactionId::from_u16(faction_id)
@@ -299,13 +392,80 @@ impl LobbyClientMessage {
                         Ok(Self::ShopAction(ShopAction::Buy {
                             dict_id,
                             amount,
-                            _idk,
+                            _unknown_1,
                             faction_id,
                         }))
                     }
                 }
             }
-            lobby_client_message_types_enum::skills_tree_action => Err(DeserializeError::Todo),
+            lobby_client_message_types_enum::skills_tree_action => {
+                let action_type = buffer.get(0).ok_or(DeserializeError::IncorrectInput)?;
+                let action_type = skills_tree_events_enum::from_u8(*action_type)
+                    .ok_or(DeserializeError::IncorrectInput)?;
+
+                let buffer = &buffer[1..];
+
+                match action_type {
+                    skills_tree_events_enum::player_skills_changed => {
+                        if buffer.len() < 12 {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+
+                        let [
+                            skills_len,
+                            skill_1_id,
+                            skill_1_points,
+                            skill_2_id,
+                            skill_2_points,
+                            skill_3_id,
+                            skill_3_points,
+                            skill_4_id,
+                            skill_4_points,
+                            skill_5_id,
+                            skill_5_points,
+                            perks_len,
+                        ]: [u8; 12] = buffer[0..12].try_into().unwrap();
+
+                        if skills_len != 5
+                            || skill_1_id != 1
+                            || skill_2_id != 2
+                            || skill_3_id != 3
+                            || skill_4_id != 4
+                            || skill_5_id != 5
+                            || skill_1_points > 20
+                            || skill_2_points > 20
+                            || skill_3_points > 20
+                            || skill_4_points > 20
+                            || skill_5_points > 20
+                        {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+
+                        let buffer = &buffer[12..];
+                        if buffer.len() != perks_len as usize {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+
+                        Ok(Self::SkillsTreeAction(SkillsTreeAction::Apply {
+                            skills: [
+                                skill_1_points,
+                                skill_2_points,
+                                skill_3_points,
+                                skill_4_points,
+                                skill_5_points,
+                            ],
+                            perks: buffer.to_vec(),
+                        }))
+                    }
+                    skills_tree_events_enum::reroll_skills => {
+                        if !buffer.is_empty() {
+                            return Err(DeserializeError::IncorrectInput);
+                        }
+                        Ok(Self::SkillsTreeAction(SkillsTreeAction::Reroll))
+                    }
+                    skills_tree_events_enum::player_perks_changed => Err(DeserializeError::Todo),
+                }
+            }
             lobby_client_message_types_enum::lobby_client_sign_in_info => match buffer.len() {
                 4 => {
                     let session_id = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
@@ -384,11 +544,36 @@ fn parses_multiple_query_client_msg() {
 
 #[test]
 fn parses_inventory_actions() {
-    // [25, 35, 0, 1, 64, 13, 3, 0, 7, 0, 0, 0, 55, 0, 0, 0, 100, 0, 0, 0, 10, 0, 0, 0, 1, 0]
-    //
-    let buffer: &[u8] = &[5, 33, 10, 0, 0, 0];
+    // Move medkit (x9) from inventory to profile:
+    let buffer: &[u8] = &[
+        25, 35, 0, 1, 64, 13, 3, 0, 10, 0, 0, 0, 67, 0, 0, 0, 100, 0, 0, 0, 13, 0, 0, 0, 9, 0,
+    ];
     let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
-    let dejure = LobbyClientMessage::QueryClientStatus(QueryClientStatus::ServicePrices);
+    let dejure = LobbyClientMessage::InventoryAction(InventoryAction::Equip {
+        profile_id: 200_000,
+        id: 10,
+        dict_id: 67,
+        kind: EquipKind::Equip {
+            to_slot: profile_slot_enum::quick_slot1,
+        },
+        amount: 9,
+    });
+    assert_eq!(defacto, dejure);
+
+    // Move UZI from profile to inventory (from second profile):
+    let buffer: &[u8] = &[
+        25, 35, 0, 1, 128, 26, 6, 0, 12, 0, 0, 0, 55, 0, 0, 0, 7, 0, 0, 0, 100, 0, 0, 0, 1, 0,
+    ];
+    let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
+    let dejure = LobbyClientMessage::InventoryAction(InventoryAction::Equip {
+        profile_id: 400_000,
+        id: 12,
+        dict_id: 55,
+        kind: EquipKind::Unequip {
+            from_slot: profile_slot_enum::weapon1_slot,
+        },
+        amount: 1,
+    });
     assert_eq!(defacto, dejure);
 }
 
@@ -408,25 +593,39 @@ fn parses_shop_actions() {
     let dejure = LobbyClientMessage::ShopAction(ShopAction::Buy {
         dict_id: 7,
         amount: 1500,
-        _idk: 0,
+        _unknown_1: 0,
         faction_id: FactionId::Loners,
     });
     assert_eq!(defacto, dejure);
 }
 
-// @TODO
-// #[test]
-// fn parses_skills_tree_actions() {
-//     // Setting skill
-//     // [14, 37, 0, 5, 1, 0, 2, 0, 3, 0, 4, 0, 5, 3, 0]
-//     // [17, 37, 0, 5, 1, 0, 2, 20, 3, 10, 4, 20, 5, 20, 3, 14, 28, 35]
-//     // Resetting skill tree
-//     // [2, 37, 1]
-//     let buffer: &[u8] = &[5, 33, 10, 0, 0, 0];
-//     let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
-//     let dejure = LobbyClientMessage::QueryClientStatus(QueryClientStatus::ServicePrices);
-//     assert_eq!(defacto, dejure);
-// }
+#[test]
+fn parses_skills_tree_actions() {
+    // Removing all skill points (costs in gold)
+    let buffer: &[u8] = &[2, 37, 1];
+    let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
+    let dejure = LobbyClientMessage::SkillsTreeAction(SkillsTreeAction::Reroll);
+    assert_eq!(defacto, dejure);
+
+    // Applying level points (without skills)
+    let buffer: &[u8] = &[14, 37, 0, 5, 1, 2, 2, 0, 3, 0, 4, 0, 5, 0, 0];
+    let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
+    let dejure = LobbyClientMessage::SkillsTreeAction(SkillsTreeAction::Apply {
+        skills: [2, 0, 0, 0, 0],
+        perks: vec![],
+    });
+    assert_eq!(defacto, dejure);
+    // Applying level points (with skills)
+    let buffer: &[u8] = &[
+        21, 37, 0, 5, 1, 20, 2, 9, 3, 9, 4, 9, 5, 0, 7, 2, 7, 9, 11, 15, 17, 24,
+    ];
+    let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
+    let dejure = LobbyClientMessage::SkillsTreeAction(SkillsTreeAction::Apply {
+        skills: [20, 9, 9, 9, 0],
+        perks: vec![2, 7, 9, 11, 15, 17, 24],
+    });
+    assert_eq!(defacto, dejure);
+}
 
 // struct price_item {
 //     item_dict_id: u16,

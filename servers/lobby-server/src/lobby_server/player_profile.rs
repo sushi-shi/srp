@@ -46,7 +46,7 @@ const _: () = assert!(std::mem::size_of::<inventory_item_instance>() == 0x10);
 #[derive(num_derive::FromPrimitive, Debug, PartialEq)]
 #[expect(non_camel_case_types)]
 #[repr(u8)]
-enum profile_slot_enum {
+pub enum profile_slot_enum {
   helmet_slot        = 0x0,
   mask_slot          = 0x1,
   torso_slot         = 0x2,
@@ -113,7 +113,7 @@ impl player_profile {
             // slots[ammo2_weapon2_slot] = i(...);
         };
 
-        if 3 > profile_name.len() || profile_name.len() > 30 {
+        if !(3 < profile_name.len() && profile_name.len() < 30) {
             panic!("bad name")
         }
 
@@ -165,4 +165,16 @@ pub enum skill_booster_enum {
     st_anomaly_damage_corr        = 9,
     st_engineer_use_time_corr     = 10,
     st_engineer_succ_chance_corr  = 11,
+}
+
+#[rustfmt::skip]
+#[derive(num_derive::FromPrimitive, Debug, PartialEq)]
+#[expect(non_camel_case_types)]
+#[repr(u8)]
+pub enum skill_id_enum {
+    st_sniper_skill      = 1,
+    st_physical_skill    = 2,
+    st_engineering_skill = 3,
+    st_medicial_skill    = 4,
+    st_knowledge_skill   = 5,
 }
