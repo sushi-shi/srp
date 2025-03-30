@@ -31,6 +31,6 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0_u8; 1024];
     let bytes_read = stream.read(&mut buffer).unwrap();
 
-    lobby_server::handle(stream.try_clone().unwrap(), &buffer, bytes_read);
+    let stream = lobby_server::handle(stream, &buffer, bytes_read);
     messaging_server::handle(stream, &buffer);
 }
