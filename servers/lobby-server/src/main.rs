@@ -2,6 +2,8 @@ mod lobby_server;
 mod messaging_server;
 mod network_client;
 
+use lobby_server::LobbyClientMessage;
+
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 
@@ -30,7 +32,12 @@ fn main() -> std::io::Result<()> {
 fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0_u8; 1024];
     let bytes_read = stream.read(&mut buffer).unwrap();
+    let buffer = &buffer[0..bytes_read];
 
-    let stream = lobby_server::handle(stream, &buffer, bytes_read);
-    messaging_server::handle(stream, &buffer);
+    match () {
+        () if LobbyClientMessage::is_lobby_client_message(buffer) => {
+            lobby_server::handle(stream, &buffer)
+        }
+        () => messaging_server::handle(stream, &buffer),
+    }
 }

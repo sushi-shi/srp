@@ -1,12 +1,12 @@
 mod client_message;
 mod player_profile;
 
+pub use client_message::{
+    query_info_types_enum, FactionId, LobbyClientMessage, QueryClientStatus, ShopAction,
+};
+
 use crate::network_client::Packet;
 use crate::ANSWER_NAME;
-use client_message::{
-    query_info_types_enum, DeserializeError, FactionId, LobbyClientMessage, QueryClientStatus,
-    ShopAction,
-};
 
 use std::io::Read;
 use std::net::TcpStream;
@@ -44,40 +44,37 @@ enum lobby_client_message_types_enum {
     lobby_client_invalid_message_type = 0x2F,
 }
 
-pub fn handle(mut stream: TcpStream, buffer: &[u8], bytes_read: usize) -> TcpStream {
-    let buffer = &mut buffer[0..bytes_read].as_ref();
-    match LobbyClientMessage::deserialize(buffer) {
-        Ok(LobbyClientMessage::SignInInfo { session_id }) => {
-            println!("Received **lobby_client_sign_in_info: {session_id}**");
+pub fn handle(mut stream: TcpStream, buffer: &[u8]) -> ! {
+    let buffer = &mut buffer.as_ref();
 
-            assert!(buffer.is_empty());
-            let mut packet = Packet::new();
-            packet.push(lobby_server_message_types_enum::connection_successful as u8);
-            packet.send(&mut stream);
+    match () {
+        () if LobbyClientMessage::is_lobby_client_message(buffer) => {
+            match LobbyClientMessage::deserialize(buffer) {
+                Ok(LobbyClientMessage::SignInInfo { session_id }) => {
+                    println!("Received **lobby_client_sign_in_info: {session_id}**");
 
-            let (tx, rx) = mpsc::channel();
-            std::thread::spawn({
-                let stream = stream.try_clone().unwrap();
-                move || {
-                    run_writer(stream, rx);
+                    assert!(buffer.is_empty());
+                    let mut packet = Packet::new();
+                    packet.push(lobby_server_message_types_enum::connection_successful as u8);
+                    packet.send(&mut stream);
+
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn({
+                        let stream = stream.try_clone().unwrap();
+                        move || {
+                            run_writer(stream, rx);
+                        }
+                    });
+                    run_reader(stream, tx);
                 }
-            });
-            run_reader(stream, tx);
+
+                Ok(msg) => panic!("Received incorrect message. Expected 'SignInInfo': {msg:?}"),
+                Err(error) => panic!("{error:?}"),
+            }
         }
-
-        Ok(msg) => panic!("Received incorrect message. Expected 'SignInInfo': {msg:?}"),
-
-        // @NOTE: If we got an unknown message type, try handling the request in a messaging server
-        // Since server sends requests to the same address for both servers
-        Err(DeserializeError::UnknownMessageType(_)) => return stream,
-
-        Err(error) => panic!("{error:?}"),
+        () => todo!(),
     }
 }
-
-// packet.push(50); // len
-// packet.push(lobby_server_message_types_enum::client_status as u8);
-// packet.extend([b'A'; 49]);
 
 // CONNECT TO MATCH SERVER
 // packet.push(1 + 1 + lobby_server::ADDRESS.len() as u8 + 4 + 4);

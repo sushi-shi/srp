@@ -97,6 +97,7 @@ pub enum QueryClientStatus {
 
 #[derive(Debug, PartialEq)]
 pub enum InventoryAction {
+    Null,
     Equip {
         profile_id: u32,
         id: u32,
@@ -162,6 +163,10 @@ pub enum DeserializeError {
 }
 
 impl LobbyClientMessage {
+    pub fn is_lobby_client_message(buffer: &[u8]) -> bool {
+        !buffer.is_empty() && lobby_client_message_types_enum::from_u8(buffer[0]).is_some()
+    }
+
     pub fn deserialize(out_buffer: &mut &[u8]) -> Result<Self, DeserializeError> {
         if out_buffer.is_empty() {
             return Err(DeserializeError::NotEnoughInput);
@@ -305,63 +310,66 @@ impl LobbyClientMessage {
                 let buffer = &buffer[1..];
 
                 match action_type {
-                    inventory_events_enum::item_moved_to_slot => {
-                        let Ok(buffer) = buffer.try_into() else {
-                            return Err(DeserializeError::IncorrectInput);
-                        };
-                        let buffer: &[u8; 23] = buffer;
-                        let (
-                            _unknown_1, // always equals 1
-                            profile_id,
-                            id,
-                            dict_id,
-                            from_slot,
-                            to_slot,
-                            amount,
-                        ) = arrayref::array_refs![buffer, 1, 4, 4, 4, 4, 4, 2];
+                    inventory_events_enum::item_moved_to_slot => match buffer {
+                        [0] => Ok(Self::InventoryAction(InventoryAction::Null)),
+                        _ => {
+                            let Ok(buffer) = buffer.try_into() else {
+                                return Err(DeserializeError::IncorrectInput);
+                            };
+                            let buffer: &[u8; 23] = buffer;
+                            let (
+                                _unknown_1, // always equals 1
+                                profile_id,
+                                id,
+                                dict_id,
+                                from_slot,
+                                to_slot,
+                                amount,
+                            ) = arrayref::array_refs![buffer, 1, 4, 4, 4, 4, 4, 2];
 
-                        if _unknown_1 != &[1] {
-                            return Err(DeserializeError::IncorrectInput);
+                            if _unknown_1 != &[1] {
+                                return Err(DeserializeError::IncorrectInput);
+                            }
+
+                            let profile_id = u32::from_le_bytes(*profile_id);
+                            let id = u32::from_le_bytes(*id);
+                            let dict_id = u32::from_le_bytes(*dict_id);
+                            let from_slot = u32::from_le_bytes(*from_slot);
+                            let to_slot = u32::from_le_bytes(*to_slot);
+                            let amount = u16::from_le_bytes(*amount);
+
+                            let dict_id: u16 = dict_id
+                                .try_into()
+                                .map_err(|_| DeserializeError::IncorrectInput)?;
+                            let kind = match (from_slot, to_slot) {
+                                (100, to_slot) => {
+                                    let to_slot = profile_slot_enum::from_u32(to_slot)
+                                        .ok_or(DeserializeError::IncorrectInput)?;
+                                    EquipKind::Equip { to_slot }
+                                }
+                                (from_slot, 100) => {
+                                    let from_slot = profile_slot_enum::from_u32(from_slot)
+                                        .ok_or(DeserializeError::IncorrectInput)?;
+                                    EquipKind::Unequip { from_slot }
+                                }
+                                (from_slot, to_slot) => {
+                                    let to_slot = profile_slot_enum::from_u32(to_slot)
+                                        .ok_or(DeserializeError::IncorrectInput)?;
+                                    let from_slot = profile_slot_enum::from_u32(from_slot)
+                                        .ok_or(DeserializeError::IncorrectInput)?;
+                                    EquipKind::Move { from_slot, to_slot }
+                                }
+                            };
+
+                            Ok(Self::InventoryAction(InventoryAction::Equip {
+                                profile_id,
+                                id,
+                                dict_id,
+                                kind,
+                                amount,
+                            }))
                         }
-
-                        let profile_id = u32::from_le_bytes(*profile_id);
-                        let id = u32::from_le_bytes(*id);
-                        let dict_id = u32::from_le_bytes(*dict_id);
-                        let from_slot = u32::from_le_bytes(*from_slot);
-                        let to_slot = u32::from_le_bytes(*to_slot);
-                        let amount = u16::from_le_bytes(*amount);
-
-                        let dict_id: u16 = dict_id
-                            .try_into()
-                            .map_err(|_| DeserializeError::IncorrectInput)?;
-                        let kind = match (from_slot, to_slot) {
-                            (100, to_slot) => {
-                                let to_slot = profile_slot_enum::from_u32(to_slot)
-                                    .ok_or(DeserializeError::IncorrectInput)?;
-                                EquipKind::Equip { to_slot }
-                            }
-                            (from_slot, 100) => {
-                                let from_slot = profile_slot_enum::from_u32(from_slot)
-                                    .ok_or(DeserializeError::IncorrectInput)?;
-                                EquipKind::Unequip { from_slot }
-                            }
-                            (from_slot, to_slot) => {
-                                let to_slot = profile_slot_enum::from_u32(to_slot)
-                                    .ok_or(DeserializeError::IncorrectInput)?;
-                                let from_slot = profile_slot_enum::from_u32(from_slot)
-                                    .ok_or(DeserializeError::IncorrectInput)?;
-                                EquipKind::Move { from_slot, to_slot }
-                            }
-                        };
-
-                        Ok(Self::InventoryAction(InventoryAction::Equip {
-                            profile_id,
-                            id,
-                            dict_id,
-                            kind,
-                            amount,
-                        }))
-                    }
+                    },
                 }
             }
 
@@ -544,6 +552,12 @@ fn parses_multiple_query_client_msg() {
 
 #[test]
 fn parses_inventory_actions() {
+    // Move something into an incorrect slot
+    let buffer: &[u8] = &[3, 35, 0, 0];
+    let defacto = LobbyClientMessage::deserialize(&mut buffer.as_ref()).unwrap();
+    let dejure = LobbyClientMessage::InventoryAction(InventoryAction::Null);
+    assert_eq!(defacto, dejure);
+
     // Move medkit (x9) from inventory to profile:
     let buffer: &[u8] = &[
         25, 35, 0, 1, 64, 13, 3, 0, 10, 0, 0, 0, 67, 0, 0, 0, 100, 0, 0, 0, 13, 0, 0, 0, 9, 0,
